@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 import uuid
 import pytest
@@ -9,7 +10,13 @@ from exceptions.app_exception import (
     NotFoundException,
 )
 from modules.authentication.auth_model import User
-from modules.rbac.rbac_model import Permission, RBACChangeRequestStatus, Role, UserPermission
+from modules.rbac.rbac_model import (
+    Permission,
+    RBACChangeRequest,
+    RBACChangeRequestStatus,
+    Role,
+    UserPermission,
+)
 from modules.rbac.rbac_schema import (
     AssignUserDirectPermissionsPayload,
     BatchRolePermissionAssignmentPayload,
@@ -373,3 +380,76 @@ async def test_list_all_users_rbac_summary_with_ids(rbac_service, mock_rbac_repo
     assert "SESSION:SESSION:REVOKE" in effective_codes
     read_item = next(p for p in u.permissions if p.code == "AUTHENTICATION:USER:READ")
     assert read_item.id == perm_read_id
+
+
+@pytest.mark.asyncio
+async def test_list_pending_change_requests_success(rbac_service, mock_rbac_repo):
+    """Test listing pending dual-control change requests."""
+    operator_id = uuid.uuid4()
+    req_id = uuid.uuid4()
+
+    mock_req = MagicMock(spec=RBACChangeRequest)
+    mock_req.id = req_id
+    mock_req.request_type = "ROLE_ASSIGNMENT"
+    mock_req.target_user_id = uuid.uuid4()
+    mock_req.target_role_id = None
+    mock_req.requested_payload = '{"roles": ["STAFF_USER"]}'
+    mock_req.status = RBACChangeRequestStatus.PENDING
+    mock_req.reason = "Promotion request"
+    mock_req.requested_by_id = uuid.uuid4()
+    mock_req.reviewed_by_id = None
+    mock_req.review_notes = None
+    mock_req.created_at = datetime.now(timezone.utc)
+    mock_req.reviewed_at = None
+
+    mock_rbac_repo.get_pending_change_requests = AsyncMock(return_value=[mock_req])
+
+    results = await rbac_service.list_pending_change_requests(operator_id=operator_id)
+    assert len(results) == 1
+    assert results[0].id == req_id
+    assert results[0].status == "PENDING"
+    assert results[0].request_type == "ROLE_ASSIGNMENT"
+
+
+@pytest.mark.asyncio
+async def test_reject_change_request_success(rbac_service, mock_rbac_repo, mock_cache_utils):
+    """Test higher-rank authority rejecting an RBAC change request."""
+    reviewer_id = uuid.uuid4()
+    requester_id = uuid.uuid4()
+    request_id = uuid.uuid4()
+
+    mock_cache_utils.async_cache.get = AsyncMock(side_effect=[
+        '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # Reviewer (rank 100)
+        '{"roles": ["ADMIN"], "permissions": []}',        # Requester (rank 50)
+    ])
+
+    mock_req = MagicMock(spec=RBACChangeRequest)
+    mock_req.id = request_id
+    mock_req.request_type = "ROLE_ASSIGNMENT"
+    mock_req.target_user_id = uuid.uuid4()
+    mock_req.target_role_id = None
+    mock_req.requested_payload = '{"roles": ["STAFF_USER"]}'
+    mock_req.status = RBACChangeRequestStatus.PENDING
+    mock_req.reason = "Promotion request"
+    mock_req.requested_by_id = requester_id
+    mock_req.reviewed_by_id = None
+    mock_req.review_notes = None
+    mock_req.created_at = datetime.now(timezone.utc)
+    mock_req.reviewed_at = None
+
+    mock_rbac_repo.get_change_request_by_id = AsyncMock(return_value=mock_req)
+
+    payload = ReviewChangeRequestPayload(review_notes="Elevation denied after review.")
+    res = await rbac_service.review_change_request(
+        operator_id=reviewer_id,
+        request_id=request_id,
+        payload=payload,
+        is_approved=False,
+    )
+
+    assert res.id == request_id
+    assert res.status == "REJECTED"
+    assert mock_req.status == RBACChangeRequestStatus.REJECTED
+    assert mock_req.reviewed_by_id == reviewer_id
+    assert mock_req.review_notes == "Elevation denied after review."
+    mock_rbac_repo.db.commit.assert_awaited_once()
