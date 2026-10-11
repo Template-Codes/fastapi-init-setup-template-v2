@@ -166,8 +166,48 @@ class UserRoleAssignmentResponse(BaseSchema):
     message: str
     user_id: UUID
     assigned_roles: List[str] = Field(default_factory=list)
+    effective_permissions: List[str] = Field(
+        default_factory=list,
+        description="Resolved effective permissions inherited across all assigned roles and direct grants"
+    )
+    total_effective_permissions: int = Field(
+        0,
+        description="Total count of resolved effective permissions"
+    )
     requires_approval: bool = Field(False, description="True if change was queued as pending approval")
     request_id: Optional[UUID] = Field(None, description="Change request UUID if queued for approval")
+
+
+class DemoteUserRolePayload(BaseSchema):
+    """Request payload for explicitly demoting / removing roles from a user."""
+    roles_to_remove: List[str] = Field(
+        ...,
+        min_length=1,
+        description="List of role names (e.g. 'ADMIN') or role UUIDs to remove from user",
+    )
+    reason: str = Field(
+        ...,
+        min_length=5,
+        max_length=255,
+        description="Mandatory justification reason for audit trail",
+    )
+
+
+class DemoteUserRoleResponse(BaseSchema):
+    """Response returned upon successfully demoting roles from a user."""
+    status: bool = True
+    message: str
+    user_id: UUID
+    removed_roles: List[str] = Field(default_factory=list)
+    remaining_roles: List[str] = Field(default_factory=list)
+    effective_permissions: List[str] = Field(
+        default_factory=list,
+        description="Resolved effective permissions remaining across assigned roles and direct grants"
+    )
+    total_effective_permissions: int = Field(
+        0,
+        description="Total count of resolved effective permissions"
+    )
 
 
 class RolePermissionAssignmentResponse(BaseSchema):

@@ -7,8 +7,8 @@ Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 {
-    "username": "superadmin",
-    "email": "superadmin@ussci.com",
+    "username": "user7",
+    "email": "user7@ussci.com",
     "plain_password": "Password@123"
 }
 
@@ -50,14 +50,14 @@ X-Header: {{secret_header_value}}
 #         "code": "ACTIVE_SESSION_EXISTS"
 #     }
 # }
-POST {{host}}/api/public/auth/auth-tokens
-Content-Type: application/json
-X-Header: {{secret_header_value}}
+# POST {{host}}/api/public/auth/auth-tokens
+# Content-Type: application/json
+# X-Header: {{secret_header_value}}
 
-{
-    "username": "admin_user",
-    "plain_password": "Password@123"
-}
+# {
+#     "username": "admin_user",
+#     "plain_password": "Password@123"
+# }
 
 
 ### (TESTED) - WORKING AS INTENDED
@@ -74,7 +74,7 @@ X-Header: {{secret_header_value}}
 # Guarded by require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_ACCEPT)
 # Transitions status from PENDING to ACTIVE and assigns initial role (default: STAFF_USER).
 # Replace :user_id with the pending user's UUID from #5
-POST {{host}}/api/private/admin/users/01a11fcc-e2bc-79e6-903c-2983865dae69/approve
+POST {{host}}/api/private/admin/users/01a128aa-0cd1-71eb-949e-3e3798a2688c/approve
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -88,7 +88,7 @@ X-Header: {{secret_header_value}}
 # Guarded by require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_REJECT)
 # Transitions status from PENDING to INACTIVE (soft audit retention under BIR rules).
 # Replace :user_id with the pending user's UUID from #5
-POST {{host}}/api/private/admin/users/01a11fcc-e2bc-79e6-903c-2983865dae69/reject
+POST {{host}}/api/private/admin/users/01a12899-c5d6-76e2-831b-90b7aaf59a96/reject
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 

@@ -18,6 +18,7 @@ from modules.rbac.rbac_schema import (
     AssignUserDirectPermissionsPayload,
     BatchRolePermissionAssignmentPayload,
     BatchRolePermissionAssignmentResponse,
+    DemoteUserRoleResponse,
     ModuleSchema,
     OperatorSummarySchema,
     PermissionSimpleSchema,
@@ -299,13 +300,13 @@ class RBACService:
         reason: str,
     ) -> UserRoleAssignmentResponse:
         """
-        Assigns or updates roles for a target user with strict governance refusals:
+        Additively assigns roles to a target user (compounding with existing roles).
+        Enforces strict governance refusals:
         1. Operators cannot modify their own roles (self-mutation refused).
         2. Operators cannot modify users with equal or higher rank.
         3. Operators cannot assign roles with rank equal to or exceeding their own rank.
-        4. Cannot demote the last remaining active Super Admin.
-        5. Dual-authorization: Privilege elevations by non-super-admins create pending change requests.
-        6. Immediate session revocation on demotion.
+        4. Dual-authorization: Privilege elevations by non-super-admins create pending change requests.
+        5. Flushes Redis permissions cache post-commit.
         """
         # Refusal 1: Self-mutation prevention
         if operator_id == user_id:
@@ -362,23 +363,9 @@ class RBACService:
                     error_code="ROLE_RANK_ESCALATION",
                 )
 
-        # Refusal 4: Lockout protection - last Super Admin demotion refusal
-        target_is_super = RoleName.SUPER_ADMIN.value in target_payload.roles
-        new_has_super = any(r.name == RoleName.SUPER_ADMIN.value for r in matched_roles)
-        if target_is_super and not new_has_super:
-            super_count = await self.rbac_repo.count_active_super_admins()
-            if super_count <= 1:
-                logger.warning(
-                    f"Attempted to demote the last active SUPER_ADMIN user {user_id}. Refused."
-                )
-                raise ConflictException(
-                    message="Cannot demote the last remaining active Super Admin.",
-                    error_code="CANNOT_DEMOTE_LAST_SUPER_ADMIN",
-                )
-
         new_highest_rank = max((get_role_rank(r.name) for r in matched_roles), default=0)
 
-        # Refusal 5 / Workflow: Non-super-admin privilege elevation requires dual authorization
+        # Refusal 4 / Workflow: Non-super-admin privilege elevation requires dual authorization
         if operator_rank < 100 and new_highest_rank > target_current_rank:
             req = await self.rbac_repo.create_change_request(
                 request_type="ROLE_ASSIGNMENT",
@@ -397,11 +384,13 @@ class RBACService:
                 message="Role elevation request submitted for hierarchical approval.",
                 user_id=user_id,
                 assigned_roles=target_payload.roles,
+                effective_permissions=target_payload.permissions,
+                total_effective_permissions=len(target_payload.permissions),
                 requires_approval=True,
                 request_id=req.id,
             )
 
-        # Direct execution: Apply role assignment
+        # Direct execution: Additively apply role assignment
         role_ids = [r.id for r in matched_roles]
         assigned_role_names = await self.rbac_repo.assign_roles_to_user(user_id, role_ids)
         await self._capture_user_rbac_snapshot(user_id, operator_id, reason)
@@ -410,24 +399,162 @@ class RBACService:
         # Invalidate permission cache post-commit
         await self.invalidate_user_permissions(user_id)
 
-        # Immediate Session Revocation on demotion or reduction
-        if new_highest_rank < target_current_rank or len(matched_roles) < len(target_payload.roles):
-            deactivated_count = await self.session_repo.deactivate_all_active_by_user_id(user_id)
-            logger.info(
-                f"Demoted user {user_id}: deactivated {deactivated_count} active sessions."
-            )
-
         logger.info(
             f"Successfully assigned roles {assigned_role_names} to user {user_id} by operator {operator_id}."
         )
+
+        updated_summary = await self.rbac_repo.get_user_roles_and_permissions(user_id)
+        effective_perms = updated_summary.get("permissions", [])
 
         return UserRoleAssignmentResponse(
             status=True,
             message=f"Successfully updated roles for user {target_username}.",
             user_id=user_id,
             assigned_roles=assigned_role_names,
+            effective_permissions=effective_perms,
+            total_effective_permissions=len(effective_perms),
             requires_approval=False,
             request_id=None,
+        )
+
+
+    async def demote_user_role(
+        self,
+        operator_id: UUID,
+        user_id: UUID,
+        roles_to_remove: Sequence[str],
+        reason: str,
+    ) -> DemoteUserRoleResponse:
+        """
+        Demotes a user by removing one or more assigned roles with strict governance refusals:
+        1. Operators cannot demote their own roles (self-mutation refused).
+        2. Operators cannot demote users with equal or higher rank.
+        3. Operators cannot demote roles with rank equal to or exceeding their own rank.
+        4. Rejects removing roles the target user does not currently hold.
+        5. Rejects removing all roles (user must retain at least one assigned role).
+        6. Rejects demoting the last remaining active Super Admin.
+        7. Immediately flushes Redis cache and terminates active user sessions.
+        """
+        # Refusal 1: Self-mutation prevention
+        if operator_id == user_id:
+            logger.warning(f"Operator {operator_id} attempted self-demotion.")
+            raise ForbiddenException(
+                message="Operators cannot demote their own assigned roles.",
+                error_code="CANNOT_MODIFY_OWN_ROLES",
+            )
+
+        # Retrieve operator context
+        operator_payload = await self.get_or_cache_user_permissions(operator_id)
+        operator_rank = get_user_highest_rank(operator_payload.roles)
+
+        # Retrieve target user context
+        target_user = await self.auth_repo.get_by_id(user_id)
+        if not target_user:
+            logger.warning(f"User {user_id} not found for role demotion.")
+            raise NotFoundException(message="User not found.", error_code="USER_NOT_FOUND")
+        target_username = target_user.username
+
+        target_payload = await self.get_or_cache_user_permissions(user_id)
+        target_current_rank = get_user_highest_rank(target_payload.roles)
+
+        # Refusal 2: Hierarchy boundary (target user rank vs operator rank)
+        if operator_rank < 100 and target_current_rank >= operator_rank:
+            logger.warning(
+                f"Operator {operator_id} (rank {operator_rank}) attempted to demote target {user_id} (rank {target_current_rank})."
+            )
+            raise ForbiddenException(
+                message="Cannot modify roles for users with equal or higher rank.",
+                error_code="INSUFFICIENT_ROLE_RANK",
+            )
+
+        # Resolve role identifiers
+        matched_roles = await self.rbac_repo.resolve_roles(roles_to_remove)
+        if len(matched_roles) != len(roles_to_remove):
+            logger.warning(
+                f"Invalid or inactive roles provided for demoting user {user_id}: requested {roles_to_remove}"
+            )
+            raise BadRequestException(
+                message="One or more specified role names/IDs do not exist or are no longer active in enums.",
+                error_code="INVALID_ROLE_ID",
+            )
+
+        # Refusal 3: Target user must actually hold the roles being removed
+        matched_role_names = {r.name for r in matched_roles}
+        target_role_names = set(target_payload.roles)
+        non_assigned = matched_role_names - target_role_names
+        if non_assigned:
+            logger.warning(
+                f"Operator {operator_id} attempted to remove unassigned roles {non_assigned} from user {user_id}."
+            )
+            raise BadRequestException(
+                message=f"User is not currently assigned role(s): {', '.join(sorted(non_assigned))}.",
+                error_code="ROLE_NOT_ASSIGNED_TO_USER",
+            )
+
+        # Refusal 4: Operator demoting role at or above own rank
+        for r in matched_roles:
+            r_rank = get_role_rank(r.name)
+            if operator_rank < 100 and r_rank >= operator_rank:
+                logger.warning(
+                    f"Operator {operator_id} (rank {operator_rank}) attempted to demote role '{r.name}' (rank {r_rank})."
+                )
+                raise ForbiddenException(
+                    message=f"Cannot remove role '{r.name}' with rank {r_rank} equal to or exceeding operator rank {operator_rank}.",
+                    error_code="ROLE_RANK_ESCALATION",
+                )
+
+        # Refusal 5: User cannot be left with zero roles
+        if target_role_names.issubset(matched_role_names):
+            logger.warning(
+                f"Demotion refused for user {user_id}: cannot remove all assigned roles without retaining at least one."
+            )
+            raise ConflictException(
+                message="Cannot remove all roles from user. A user must retain at least one assigned role.",
+                error_code="USER_CANNOT_HAVE_ZERO_ROLES",
+            )
+
+        # Refusal 6: Lockout protection - last Super Admin demotion refusal
+        if RoleName.SUPER_ADMIN.value in matched_role_names:
+            super_count = await self.rbac_repo.count_active_super_admins()
+            if super_count <= 1:
+                logger.warning(
+                    f"Attempted to demote the last active SUPER_ADMIN user {user_id}. Refused."
+                )
+                raise ConflictException(
+                    message="Cannot demote the last remaining active Super Admin.",
+                    error_code="CANNOT_DEMOTE_LAST_SUPER_ADMIN",
+                )
+
+        # Direct execution: Apply demotion
+        role_ids = [r.id for r in matched_roles]
+        removed_role_names, remaining_role_names = await self.rbac_repo.demote_user_roles(
+            user_id, role_ids
+        )
+        demote_snapshot_reason = f"Role demotion: removed [{', '.join(removed_role_names)}]. Reason: {reason}"
+        await self._capture_user_rbac_snapshot(user_id, operator_id, demote_snapshot_reason)
+        await self.rbac_repo.db.commit()
+
+        # Invalidate permission cache post-commit
+        await self.invalidate_user_permissions(user_id)
+
+        # Zero-trust immediate session termination
+        deactivated_count = await self.session_repo.deactivate_all_active_by_user_id(user_id)
+        logger.info(
+            f"Successfully demoted roles {removed_role_names} for user {user_id} by operator {operator_id}. "
+            f"Deactivated {deactivated_count} active sessions."
+        )
+
+        updated_summary = await self.rbac_repo.get_user_roles_and_permissions(user_id)
+        effective_perms = updated_summary.get("permissions", [])
+
+        return DemoteUserRoleResponse(
+            status=True,
+            message=f"Successfully demoted roles for user {target_username}.",
+            user_id=user_id,
+            removed_roles=removed_role_names,
+            remaining_roles=remaining_role_names,
+            effective_permissions=effective_perms,
+            total_effective_permissions=len(effective_perms),
         )
 
 
@@ -1310,8 +1437,8 @@ class RBACService:
                     "is_granted": dp.get("is_granted", True),
                 })
 
-        # Apply roles assignment
-        assigned_role_names = await self.rbac_repo.assign_roles_to_user(user_id, role_ids)
+        # Apply roles restore
+        assigned_role_names = await self.rbac_repo.replace_user_roles(user_id, role_ids)
 
         # Apply direct permissions restore
         direct_restore_reason = f"Rollback to snapshot {target_snapshot_id}: {reason}"

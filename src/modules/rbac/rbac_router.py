@@ -10,6 +10,8 @@ from modules.rbac.rbac_schema import (
     AssignUserRolesPayload,
     BatchRolePermissionAssignmentPayload,
     BatchRolePermissionAssignmentResponse,
+    DemoteUserRolePayload,
+    DemoteUserRoleResponse,
     RBACChangeRequestResponse,
     RBACConfigResponse,
     RemoveUserDirectPermissionsPayload,
@@ -157,7 +159,7 @@ async def rollback_user_rbac(
 
 @router.put(
     "/users/{user_id}/roles",
-    summary="Assign / update roles for a specific user and invalidate permission cache.",
+    summary="Additively assign roles to a specific user and invalidate permission cache.",
     status_code=status.HTTP_200_OK,
     response_model=UserRoleAssignmentResponse,
 )
@@ -168,17 +170,46 @@ async def assign_user_roles(
     service: RBACService = Depends(),
 ) -> UserRoleAssignmentResponse:
     """
-    Replaces user's assigned roles with strict governance refusals:
+    Additively compounds assigned roles for a target user with strict governance refusals:
     - Rejects self-mutation
     - Rejects assignment at/above operator rank
-    - Rejects demotion of the last active Super Admin
     - Non-super-admin privilege elevations queue for dual-authorization approval
-    - Immediately invalidates Redis cache and terminates sessions on demotion
+    - Automatically combines default permissions of newly assigned roles with existing roles
+    - Immediately invalidates Redis permissions cache
     """
     return await service.assign_roles_to_user(
         operator_id=operator_id,
         user_id=user_id,
         role_identifiers=payload.roles,
+        reason=payload.reason,
+    )
+
+
+@router.post(
+    "/users/{user_id}/demote",
+    summary="Demote user roles and immediately terminate active sessions.",
+    status_code=status.HTTP_200_OK,
+    response_model=DemoteUserRoleResponse,
+)
+async def demote_user_roles(
+    user_id: UUID,
+    payload: DemoteUserRolePayload,
+    operator_id: UUID = Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    service: RBACService = Depends(),
+) -> DemoteUserRoleResponse:
+    """
+    Explicitly demotes a user by removing specified roles with zero-trust enforcement:
+    - Rejects self-mutation (operators cannot demote themselves)
+    - Rejects demoting users with equal or higher rank
+    - Rejects removing roles at or above operator rank
+    - Rejects removing unassigned roles or leaving user with zero roles
+    - Rejects demotion of the last active Super Admin
+    - Flushes Redis permissions cache and terminates active user sessions immediately
+    """
+    return await service.demote_user_role(
+        operator_id=operator_id,
+        user_id=user_id,
+        roles_to_remove=payload.roles_to_remove,
         reason=payload.reason,
     )
 

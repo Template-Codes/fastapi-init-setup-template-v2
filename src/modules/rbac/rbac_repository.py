@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 from base.repository import BaseRepository
@@ -441,8 +441,43 @@ class RBACRepository(BaseRepository[Role]):
 
     async def assign_roles_to_user(self, user_id: UUID, role_ids: List[UUID]) -> List[str]:
         """
+        Additively assigns roles to a user without overwriting existing assignments.
+        Compounds roles and returns list of all currently assigned role names.
+        """
+        try:
+            # Find currently assigned role IDs for user
+            existing_stmt = select(UserRole.role_id).where(UserRole.user_id == user_id)
+            existing_res = await self.db.execute(existing_stmt)
+            existing_role_ids = set(existing_res.scalars().all())
+
+            # Insert only new assignments
+            for r_id in role_ids:
+                if r_id not in existing_role_ids:
+                    self.db.add(UserRole(user_id=user_id, role_id=r_id))
+
+            await self.db.flush()
+
+            # Query all currently assigned role names for the user
+            role_stmt = (
+                select(Role.name)
+                .join(UserRole, UserRole.role_id == Role.id)
+                .where(UserRole.user_id == user_id)
+                .order_by(Role.name.asc())
+            )
+            role_res = await self.db.execute(role_stmt)
+            return list(role_res.scalars().all())
+        except Exception as e:
+            logger.error(f"Failed to assign roles to user {user_id}: {e}")
+            raise InternalServerException(
+                message="Failed to update user roles.",
+                error_code="USER_ROLE_ASSIGNMENT_FAILED"
+            )
+
+
+    async def replace_user_roles(self, user_id: UUID, role_ids: List[UUID]) -> List[str]:
+        """
         Replaces all assigned roles for a user with the provided role_ids.
-        Returns list of newly assigned role names.
+        Used for exact point-in-time state rollbacks. Returns list of assigned role names.
         """
         try:
             # Delete current assignments
@@ -456,14 +491,59 @@ class RBACRepository(BaseRepository[Role]):
             await self.db.flush()
 
             # Query assigned role names
-            role_stmt = select(Role.name).where(Role.id.in_(role_ids))
+            role_stmt = select(Role.name).where(Role.id.in_(role_ids)).order_by(Role.name.asc())
             role_res = await self.db.execute(role_stmt)
-            return [r[0] for r in role_res.fetchall()]
+            return list(role_res.scalars().all())
         except Exception as e:
-            logger.error(f"Failed to assign roles to user {user_id}: {e}")
+            logger.error(f"Failed to replace roles for user {user_id}: {e}")
             raise InternalServerException(
-                message="Failed to update user roles.",
-                error_code="USER_ROLE_ASSIGNMENT_FAILED"
+                message="Failed to replace user roles.",
+                error_code="USER_ROLE_REPLACEMENT_FAILED"
+            )
+
+
+    async def demote_user_roles(
+        self, user_id: UUID, role_ids_to_remove: List[UUID]
+    ) -> Tuple[List[str], List[str]]:
+        """
+        Demotes a user by removing specified role IDs from user_roles.
+        Returns a tuple of (removed_role_names, remaining_role_names).
+        """
+        try:
+            # Query the names of the roles being removed
+            remove_stmt = (
+                select(Role.name)
+                .join(UserRole, UserRole.role_id == Role.id)
+                .where(UserRole.user_id == user_id, Role.id.in_(role_ids_to_remove))
+                .order_by(Role.name.asc())
+            )
+            remove_res = await self.db.execute(remove_stmt)
+            removed_role_names = list(remove_res.scalars().all())
+
+            # Delete the specified assignments
+            del_stmt = delete(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id.in_(role_ids_to_remove)
+            )
+            await self.db.execute(del_stmt)
+            await self.db.flush()
+
+            # Query remaining assigned role names
+            remaining_stmt = (
+                select(Role.name)
+                .join(UserRole, UserRole.role_id == Role.id)
+                .where(UserRole.user_id == user_id)
+                .order_by(Role.name.asc())
+            )
+            remaining_res = await self.db.execute(remaining_stmt)
+            remaining_role_names = list(remaining_res.scalars().all())
+
+            return removed_role_names, remaining_role_names
+        except Exception as e:
+            logger.error(f"Failed to demote roles for user {user_id}: {e}")
+            raise InternalServerException(
+                message="Failed to demote user roles.",
+                error_code="USER_ROLE_DEMOTION_FAILED"
             )
 
 

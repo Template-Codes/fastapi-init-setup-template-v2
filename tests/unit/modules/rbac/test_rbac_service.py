@@ -33,6 +33,8 @@ def mock_rbac_repo():
     repo.db.expire_all = MagicMock()
     repo.count_active_super_admins = AsyncMock(return_value=2)
     repo.assign_roles_to_user = AsyncMock(return_value=[])
+    repo.replace_user_roles = AsyncMock(return_value=[])
+    repo.demote_user_roles = AsyncMock(return_value=([], []))
     repo.get_user_roles_and_permissions = AsyncMock(return_value={"roles": [], "permissions": []})
     repo.get_user_with_rbac_details = AsyncMock(return_value=None)
     repo.create_user_rbac_snapshot = AsyncMock()
@@ -193,7 +195,7 @@ async def test_last_super_admin_demotion_refusal(rbac_service, mock_auth_repo, m
 
     mock_cache_utils.async_cache.get = AsyncMock(side_effect=[
         '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # operator
-        '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # target
+        '{"roles": ["SUPER_ADMIN", "ADMIN"], "permissions": []}',  # target
     ])
 
     target_user = MagicMock(spec=User)
@@ -201,20 +203,142 @@ async def test_last_super_admin_demotion_refusal(rbac_service, mock_auth_repo, m
     target_user.username = "last_superadmin"
     mock_auth_repo.get_by_id = AsyncMock(return_value=target_user)
 
+    mock_super_role = MagicMock(spec=Role)
+    mock_super_role.id = uuid.uuid4()
+    mock_super_role.name = "SUPER_ADMIN"
+    mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_super_role])
+    mock_rbac_repo.count_active_super_admins = AsyncMock(return_value=1)
+
+    with pytest.raises(ConflictException) as exc_info:
+        await rbac_service.demote_user_role(
+            operator_id=operator_id,
+            user_id=target_id,
+            roles_to_remove=["SUPER_ADMIN"],
+            reason="Attempting to demote last superadmin.",
+        )
+    assert exc_info.value.error_code == "CANNOT_DEMOTE_LAST_SUPER_ADMIN"
+
+
+@pytest.mark.asyncio
+async def test_demote_user_role_self_mutation_refusal(rbac_service):
+    """Test operator cannot demote their own roles."""
+    operator_id = uuid.uuid4()
+    with pytest.raises(ForbiddenException) as exc_info:
+        await rbac_service.demote_user_role(
+            operator_id=operator_id,
+            user_id=operator_id,
+            roles_to_remove=["ADMIN"],
+            reason="Self-demotion attempt.",
+        )
+    assert exc_info.value.error_code == "CANNOT_MODIFY_OWN_ROLES"
+
+
+@pytest.mark.asyncio
+async def test_demote_user_role_not_assigned_refusal(rbac_service, mock_auth_repo, mock_rbac_repo, mock_cache_utils):
+    """Test demoting a role the user doesn't hold raises error."""
+    operator_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+
+    mock_cache_utils.async_cache.get = AsyncMock(side_effect=[
+        '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # operator
+        '{"roles": ["STAFF_USER"], "permissions": []}',  # target
+    ])
+
+    target_user = MagicMock(spec=User)
+    target_user.id = target_id
+    target_user.username = "staffuser"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=target_user)
+
+    mock_admin_role = MagicMock(spec=Role)
+    mock_admin_role.id = uuid.uuid4()
+    mock_admin_role.name = "ADMIN"
+    mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_admin_role])
+
+    with pytest.raises(BadRequestException) as exc_info:
+        await rbac_service.demote_user_role(
+            operator_id=operator_id,
+            user_id=target_id,
+            roles_to_remove=["ADMIN"],
+            reason="Demoting unassigned role.",
+        )
+    assert exc_info.value.error_code == "ROLE_NOT_ASSIGNED_TO_USER"
+
+
+@pytest.mark.asyncio
+async def test_demote_user_role_cannot_leave_zero_roles_refusal(rbac_service, mock_auth_repo, mock_rbac_repo, mock_cache_utils):
+    """Test user cannot be demoted out of all their roles."""
+    operator_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+
+    mock_cache_utils.async_cache.get = AsyncMock(side_effect=[
+        '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # operator
+        '{"roles": ["STAFF_USER"], "permissions": []}',  # target
+    ])
+
+    target_user = MagicMock(spec=User)
+    target_user.id = target_id
+    target_user.username = "staffuser"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=target_user)
+
     mock_staff_role = MagicMock(spec=Role)
     mock_staff_role.id = uuid.uuid4()
     mock_staff_role.name = "STAFF_USER"
     mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_staff_role])
-    mock_rbac_repo.count_active_super_admins = AsyncMock(return_value=1)
 
     with pytest.raises(ConflictException) as exc_info:
-        await rbac_service.assign_roles_to_user(
+        await rbac_service.demote_user_role(
             operator_id=operator_id,
             user_id=target_id,
-            role_identifiers=["STAFF_USER"],
-            reason="Attempting to demote last superadmin.",
+            roles_to_remove=["STAFF_USER"],
+            reason="Demoting only role.",
         )
-    assert exc_info.value.error_code == "CANNOT_DEMOTE_LAST_SUPER_ADMIN"
+    assert exc_info.value.error_code == "USER_CANNOT_HAVE_ZERO_ROLES"
+
+
+@pytest.mark.asyncio
+async def test_demote_user_role_success_and_session_termination(
+    rbac_service, mock_auth_repo, mock_rbac_repo, mock_session_repo, mock_cache_utils
+):
+    """Test demoting a role removes role, kills active sessions, and updates effective permissions."""
+    operator_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+    admin_role_id = uuid.uuid4()
+
+    mock_cache_utils.async_cache.get = AsyncMock(side_effect=[
+        '{"roles": ["SUPER_ADMIN"], "permissions": []}',  # operator
+        '{"roles": ["ADMIN", "STAFF_USER"], "permissions": []}',  # target
+    ])
+
+    target_user = MagicMock(spec=User)
+    target_user.id = target_id
+    target_user.username = "demoted_admin"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=target_user)
+
+    mock_admin_role = MagicMock(spec=Role)
+    mock_admin_role.id = admin_role_id
+    mock_admin_role.name = "ADMIN"
+    mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_admin_role])
+    mock_rbac_repo.demote_user_roles = AsyncMock(return_value=(["ADMIN"], ["STAFF_USER"]))
+    mock_session_repo.deactivate_all_active_by_user_id = AsyncMock(return_value=2)
+    mock_rbac_repo.get_user_roles_and_permissions = AsyncMock(
+        return_value={"roles": ["STAFF_USER"], "permissions": ["PROFILE:USER:READ"]}
+    )
+
+    res = await rbac_service.demote_user_role(
+        operator_id=operator_id,
+        user_id=target_id,
+        roles_to_remove=["ADMIN"],
+        reason="Stepping down from admin.",
+    )
+
+    assert res.status is True
+    assert res.removed_roles == ["ADMIN"]
+    assert res.remaining_roles == ["STAFF_USER"]
+    assert res.effective_permissions == ["PROFILE:USER:READ"]
+    assert res.total_effective_permissions == 1
+    mock_session_repo.deactivate_all_active_by_user_id.assert_awaited_once_with(target_id)
+    mock_cache_utils.invalidate_user_permission_cache.assert_awaited_once_with(str(target_id))
+    mock_rbac_repo.db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -259,6 +383,9 @@ async def test_assign_roles_success_and_cache_invalidation(
     mock_role.name = "STAFF_USER"
     mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_role])
     mock_rbac_repo.assign_roles_to_user = AsyncMock(return_value=["STAFF_USER"])
+    mock_rbac_repo.get_user_roles_and_permissions = AsyncMock(
+        return_value={"roles": ["STAFF_USER"], "permissions": ["PROFILE:USER:READ"]}
+    )
 
     res = await rbac_service.assign_roles_to_user(
         operator_id=operator_id,
@@ -268,6 +395,8 @@ async def test_assign_roles_success_and_cache_invalidation(
     )
     assert res.status is True
     assert res.assigned_roles == ["STAFF_USER"]
+    assert res.effective_permissions == ["PROFILE:USER:READ"]
+    assert res.total_effective_permissions == 1
     assert res.requires_approval is False
     mock_rbac_repo.db.commit.assert_awaited_once()
     mock_cache_utils.invalidate_user_permission_cache.assert_awaited_once_with(str(target_id))
@@ -925,7 +1054,7 @@ async def test_rollback_user_rbac_success(
     mock_role.id = role_id
     mock_role.name = "STAFF_USER"
     mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_role])
-    mock_rbac_repo.assign_roles_to_user = AsyncMock(return_value=["STAFF_USER"])
+    mock_rbac_repo.replace_user_roles = AsyncMock(return_value=["STAFF_USER"])
 
     mock_perm = MagicMock(spec=Permission)
     mock_perm.id = perm_id
