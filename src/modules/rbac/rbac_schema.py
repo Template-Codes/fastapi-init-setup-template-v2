@@ -240,3 +240,45 @@ class UserSnapshotHistoryResponse(BaseSchema):
     updated_by: OperatorSummarySchema
     reason: str
 
+
+class RoleRollbackPayload(BaseSchema):
+    """Request payload for rolling back role permissions to a historical snapshot."""
+    snapshot_id: UUID = Field(..., description="Target snapshot ID to restore")
+    reason: str = Field(..., min_length=5, max_length=255, description="Auditable justification for the rollback")
+
+
+class RoleRollbackResponse(BaseSchema):
+    """Response schema following a role permission rollback."""
+    status: bool = True
+    message: str
+    role_id: UUID
+    role_name: str
+    restored_from_snapshot_id: UUID
+    restored_permissions: List[str]
+    total_permissions: int
+
+
+class UserDirectPermissionItem(BaseSchema):
+    """Representation of a direct permission grant or revocation."""
+    id: UUID
+    code: str
+    is_granted: bool
+
+
+class UserRollbackPayload(BaseSchema):
+    """Request payload for rolling back a user's RBAC state to a historical snapshot."""
+    snapshot_id: UUID = Field(..., description="Target snapshot ID to restore")
+    reason: str = Field(..., min_length=5, max_length=255, description="Auditable justification for the rollback")
+
+
+class UserRollbackResponse(BaseSchema):
+    """Response schema following a user RBAC state rollback."""
+    status: bool = True
+    message: str
+    user_id: UUID
+    username: str
+    restored_from_snapshot_id: UUID
+    restored_roles: List[str]
+    restored_direct_permissions: List[UserDirectPermissionItem]
+    effective_permissions: List[str]
+    total_effective_permissions: int

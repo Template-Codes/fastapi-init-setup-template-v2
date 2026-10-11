@@ -26,13 +26,16 @@ from modules.rbac.rbac_schema import (
     ReviewChangeRequestPayload,
     RoleOverviewSchema,
     RolePermissionAssignmentResponse,
+    RoleRollbackResponse,
     RoleSimpleSchema,
     RoleSnapshotHistoryResponse,
+    UserDirectPermissionItem,
     UserDirectPermissionsResponse,
     UserPermissionsCachePayload,
     UserRBACListItemResponse,
     UserRBACSummaryResponse,
     UserRoleAssignmentResponse,
+    UserRollbackResponse,
     UserSnapshotHistoryResponse,
 )
 from modules.session.session_repo import UserSessionRepository
@@ -321,6 +324,7 @@ class RBACService:
         if not target_user:
             logger.warning(f"User {user_id} not found for role assignment.")
             raise NotFoundException(message="User not found.", error_code="USER_NOT_FOUND")
+        target_username = target_user.username
 
         target_payload = await self.get_or_cache_user_permissions(user_id)
         target_current_rank = get_user_highest_rank(target_payload.roles)
@@ -419,7 +423,7 @@ class RBACService:
 
         return UserRoleAssignmentResponse(
             status=True,
-            message=f"Successfully updated roles for user {target_user.username}.",
+            message=f"Successfully updated roles for user {target_username}.",
             user_id=user_id,
             assigned_roles=assigned_role_names,
             requires_approval=False,
@@ -453,6 +457,7 @@ class RBACService:
         target_user = await self.auth_repo.get_by_id(user_id)
         if not target_user:
             raise NotFoundException(message="User not found.", error_code="USER_NOT_FOUND")
+        target_username = target_user.username
 
         target_payload = await self.get_or_cache_user_permissions(user_id)
         target_rank = get_user_highest_rank(target_payload.roles)
@@ -504,7 +509,7 @@ class RBACService:
 
         return UserDirectPermissionsResponse(
             status=True,
-            message=f"Successfully updated direct permissions for user {target_user.username}.",
+            message=f"Successfully updated direct permissions for user {target_username}.",
             user_id=user_id,
             direct_grants=updated_summary.get("direct_grants", []),
             direct_revocations=updated_summary.get("direct_revocations", []),
@@ -531,6 +536,7 @@ class RBACService:
         target_user = await self.auth_repo.get_by_id(user_id)
         if not target_user:
             raise NotFoundException(message="User not found.", error_code="USER_NOT_FOUND")
+        target_username = target_user.username
 
         target_payload = await self.get_or_cache_user_permissions(user_id)
         target_rank = get_user_highest_rank(target_payload.roles)
@@ -559,7 +565,7 @@ class RBACService:
 
         return UserDirectPermissionsResponse(
             status=True,
-            message=f"Successfully removed direct permission overrides for user {target_user.username}.",
+            message=f"Successfully removed direct permission overrides for user {target_username}.",
             user_id=user_id,
             direct_grants=updated_summary.get("direct_grants", []),
             direct_revocations=updated_summary.get("direct_revocations", []),
@@ -972,6 +978,7 @@ class RBACService:
             )
         return results
 
+
     async def get_role_permission_history(
         self,
         role_identifier: str,
@@ -1056,3 +1063,303 @@ class RBACService:
                 )
             )
         return results
+
+
+    async def rollback_role_permissions(
+        self,
+        operator_id: UUID,
+        role_identifier: str,
+        snapshot_id: UUID,
+        reason: str,
+    ) -> RoleRollbackResponse:
+        """
+        Restores a role's permissions back to the state captured in a specified historical snapshot.
+        1. SUPER_ADMIN permissions are immutable and cannot be rolled back.
+        2. Operator cannot rollback a role with rank >= own rank.
+        3. Operator cannot grant permissions they do not possess (grant ceiling).
+        4. Validates that the snapshot belongs to the specified role.
+        5. Preserves immutable audit history by appending a new rollback snapshot.
+        6. Flushes Redis caches for all users holding this role.
+        """
+        role = await self.rbac_repo.get_role_by_identifier(role_identifier)
+        if not role:
+            logger.warning(f"Role '{role_identifier}' not found for rollback.")
+            raise NotFoundException(
+                message=f"Role '{role_identifier}' not found or is no longer active in enums.",
+                error_code="ROLE_NOT_FOUND",
+            )
+
+        target_role_id = role.id
+        target_role_name = role.name
+
+        if target_role_name == RoleName.SUPER_ADMIN.value:
+            logger.warning("Attempted rollback of immutable SUPER_ADMIN role permissions.")
+            raise ForbiddenException(
+                message="Super Admin role permissions are immutable and cannot be rolled back.",
+                error_code="SUPER_ADMIN_IMMUTABLE",
+            )
+
+        operator_payload = await self.get_or_cache_user_permissions(operator_id)
+        operator_rank = get_user_highest_rank(operator_payload.roles)
+        role_rank = get_role_rank(target_role_name)
+
+        if operator_rank < 100 and role_rank >= operator_rank:
+            raise ForbiddenException(
+                message=f"Cannot rollback permissions for role '{target_role_name}' with rank {role_rank} equal to or exceeding operator rank {operator_rank}.",
+                error_code="ROLE_RANK_ESCALATION",
+            )
+
+        snapshot = await self.rbac_repo.get_role_permission_snapshot_by_id(snapshot_id)
+        if not snapshot:
+            logger.warning(f"Snapshot '{snapshot_id}' not found for role rollback.")
+            raise NotFoundException(
+                message=f"Snapshot '{snapshot_id}' not found.",
+                error_code="SNAPSHOT_NOT_FOUND",
+            )
+
+        if snapshot.role_id != target_role_id:
+            logger.warning(f"Snapshot role mismatch: snapshot.role_id={snapshot.role_id} vs role.id={target_role_id}")
+            raise BadRequestException(
+                message="Selected snapshot does not belong to the specified role.",
+                error_code="SNAPSHOT_ROLE_MISMATCH",
+            )
+
+        target_snapshot_id = snapshot.id
+        snapshot_time_str = snapshot.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Reconcile permissions in snapshot against active enums
+        valid_perm_codes = {p.value for p in SystemPermission}
+        perm_codes_to_restore = [
+            p["code"] for p in snapshot.permissions_payload
+            if p.get("code") in valid_perm_codes
+        ]
+
+        if operator_rank < 100:
+            operator_perms = set(operator_payload.permissions)
+            for p_code in perm_codes_to_restore:
+                if p_code not in operator_perms:
+                    raise ForbiddenException(
+                        message=f"Grant ceiling exceeded: operator does not possess permission '{p_code}'.",
+                        error_code="GRANT_CEILING_EXCEEDED",
+                    )
+
+        matched_perms = await self.rbac_repo.resolve_permissions(perm_codes_to_restore) if perm_codes_to_restore else []
+        perm_ids = [p.id for p in matched_perms]
+
+        assigned_perm_codes = await self.rbac_repo.assign_permissions_to_role(target_role_id, perm_ids)
+
+        # Capture immutable rollback snapshot
+        new_perm_payload = [{"id": str(p.id), "code": p.code} for p in matched_perms]
+        rollback_reason = f"Rollback to snapshot {target_snapshot_id} ({snapshot_time_str}): {reason}"
+        await self.rbac_repo.create_role_permission_snapshot(
+            role_id=target_role_id,
+            permissions_payload=new_perm_payload,
+            changed_by_id=operator_id,
+            reason=rollback_reason,
+        )
+
+        await self.rbac_repo.db.commit()
+
+        # Invalidate cache for all affected users holding this role
+        affected_user_ids = await self.rbac_repo.get_user_ids_by_role(target_role_id)
+        for u_id in affected_user_ids:
+            await self.invalidate_user_permissions(u_id)
+
+        logger.info(
+            f"Successfully rolled back permissions for role '{target_role_name}' to snapshot {target_snapshot_id}. "
+            f"Restored {len(assigned_perm_codes)} permissions. Cache invalidated for {len(affected_user_ids)} users."
+        )
+
+        return RoleRollbackResponse(
+            status=True,
+            message=f"Successfully rolled back permissions for role '{target_role_name}' to snapshot {target_snapshot_id}.",
+            role_id=target_role_id,
+            role_name=target_role_name,
+            restored_from_snapshot_id=target_snapshot_id,
+            restored_permissions=assigned_perm_codes,
+            total_permissions=len(assigned_perm_codes),
+        )
+
+
+    async def rollback_user_rbac(
+        self,
+        operator_id: UUID,
+        user_id: UUID,
+        snapshot_id: UUID,
+        reason: str,
+    ) -> UserRollbackResponse:
+        """
+        Restores a user's roles and direct custom permissions to the state captured in a specified historical snapshot.
+        1. Operators cannot rollback their own RBAC state (self-mutation refusal).
+        2. Operators cannot rollback users with equal or higher rank.
+        3. Protects against demoting the last active Super Admin.
+        4. Validates that the snapshot belongs to the specified user.
+        5. Reconciles roles and permissions against current active enums.
+        6. Appends an immutable audit snapshot recording the rollback event.
+        7. Flushes Redis cache and terminates active sessions on demotion.
+        """
+        if operator_id == user_id:
+            raise ForbiddenException(
+                message="Operators cannot rollback their own RBAC state.",
+                error_code="CANNOT_MODIFY_OWN_RBAC",
+            )
+
+        target_user = await self.auth_repo.get_by_id(user_id)
+        if not target_user:
+            raise NotFoundException(message=f"User '{user_id}' not found.", error_code="USER_NOT_FOUND")
+        target_username = target_user.username
+
+        operator_payload = await self.get_or_cache_user_permissions(operator_id)
+        operator_rank = get_user_highest_rank(operator_payload.roles)
+
+        target_payload = await self.get_or_cache_user_permissions(user_id)
+        target_current_rank = get_user_highest_rank(target_payload.roles)
+
+        if operator_rank < 100 and target_current_rank >= operator_rank:
+            raise ForbiddenException(
+                message="Cannot modify RBAC state for users with equal or higher rank.",
+                error_code="INSUFFICIENT_ROLE_RANK",
+            )
+
+        snapshot = await self.rbac_repo.get_user_rbac_snapshot_by_id(snapshot_id)
+        if not snapshot:
+            logger.warning(f"Snapshot '{snapshot_id}' not found for user rollback.")
+            raise NotFoundException(
+                message=f"Snapshot '{snapshot_id}' not found.",
+                error_code="SNAPSHOT_NOT_FOUND",
+            )
+
+        if snapshot.user_id != user_id:
+            logger.warning(f"Snapshot user mismatch: snapshot.user_id={snapshot.user_id} vs user_id={user_id}")
+            raise BadRequestException(
+                message="Selected snapshot does not belong to the specified user.",
+                error_code="SNAPSHOT_USER_MISMATCH",
+            )
+
+        target_snapshot_id = snapshot.id
+        snapshot_time_str = snapshot.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1. Reconcile roles against active enums
+        valid_role_names = {r.value for r in RoleName}
+        roles_to_restore = [
+            r["name"] for r in snapshot.roles_payload
+            if r.get("name") in valid_role_names
+        ]
+
+        # Lockout protection: Cannot demote last Super Admin
+        target_is_super = RoleName.SUPER_ADMIN.value in target_payload.roles
+        new_has_super = RoleName.SUPER_ADMIN.value in roles_to_restore
+        if target_is_super and not new_has_super:
+            super_count = await self.rbac_repo.count_active_super_admins()
+            if super_count <= 1:
+                logger.warning(f"Attempted to demote the last active SUPER_ADMIN user {user_id} via rollback. Refused.")
+                raise ConflictException(
+                    message="Cannot demote the last remaining active Super Admin.",
+                    error_code="CANNOT_DEMOTE_LAST_SUPER_ADMIN",
+                )
+
+        # Hierarchy check on restored roles
+        for r_name in roles_to_restore:
+            r_rank = get_role_rank(r_name)
+            if operator_rank < 100 and r_rank >= operator_rank:
+                raise ForbiddenException(
+                    message=f"Cannot assign role '{r_name}' with rank {r_rank} equal to or exceeding operator rank {operator_rank}.",
+                    error_code="ROLE_RANK_ESCALATION",
+                )
+
+        new_highest_rank = max((get_role_rank(r) for r in roles_to_restore), default=0)
+        if operator_rank < 100 and new_highest_rank > target_current_rank:
+            raise ForbiddenException(
+                message="Privilege elevation via snapshot rollback requires Super Admin authorization.",
+                error_code="ROLE_RANK_ESCALATION",
+            )
+
+        # 2. Reconcile direct permissions
+        valid_perm_codes = {p.value for p in SystemPermission}
+        direct_perms_to_restore = [
+            p for p in snapshot.direct_permissions_payload
+            if p.get("code") in valid_perm_codes
+        ]
+
+        if operator_rank < 100:
+            operator_perms = set(operator_payload.permissions)
+            for dp in direct_perms_to_restore:
+                if dp.get("is_granted", True) and dp["code"] not in operator_perms:
+                    raise ForbiddenException(
+                        message=f"Grant ceiling exceeded: operator does not possess permission '{dp['code']}'.",
+                        error_code="GRANT_CEILING_EXCEEDED",
+                    )
+
+        # Resolve DB objects
+        matched_roles = await self.rbac_repo.resolve_roles(roles_to_restore) if roles_to_restore else []
+        role_ids = [r.id for r in matched_roles]
+
+        matched_direct_perms = (
+            await self.rbac_repo.resolve_permissions([p["code"] for p in direct_perms_to_restore])
+            if direct_perms_to_restore else []
+        )
+        code_to_perm = {p.code: p for p in matched_direct_perms}
+
+        sanitized_direct_payload = []
+        for dp in direct_perms_to_restore:
+            p_obj = code_to_perm.get(dp["code"])
+            if p_obj:
+                sanitized_direct_payload.append({
+                    "id": str(p_obj.id),
+                    "code": p_obj.code,
+                    "is_granted": dp.get("is_granted", True),
+                })
+
+        # Apply roles assignment
+        assigned_role_names = await self.rbac_repo.assign_roles_to_user(user_id, role_ids)
+
+        # Apply direct permissions restore
+        direct_restore_reason = f"Rollback to snapshot {target_snapshot_id}: {reason}"
+        await self.rbac_repo.restore_user_direct_permissions(
+            user_id=user_id,
+            direct_permissions_payload=sanitized_direct_payload,
+            assigned_by_id=operator_id,
+            reason=direct_restore_reason,
+        )
+
+        # Capture immutable rollback snapshot
+        rollback_reason = f"Rollback to snapshot {target_snapshot_id} ({snapshot_time_str}): {reason}"
+        await self._capture_user_rbac_snapshot(user_id, operator_id, reason=rollback_reason)
+
+        await self.rbac_repo.db.commit()
+
+        # Invalidate Redis permissions cache
+        await self.invalidate_user_permissions(user_id)
+
+        # Deactivate active sessions if demoted or fewer roles
+        if new_highest_rank < target_current_rank or len(roles_to_restore) < len(target_payload.roles):
+            deactivated_count = await self.session_repo.deactivate_all_active_by_user_id(user_id)
+            logger.info(f"Rollback demoted user {user_id}: deactivated {deactivated_count} active sessions.")
+
+        updated_summary = await self.rbac_repo.get_user_roles_and_permissions(user_id)
+        effective_perms = updated_summary.get("permissions", [])
+
+        direct_items = [
+            UserDirectPermissionItem(
+                id=UUID(dp["id"]),
+                code=dp["code"],
+                is_granted=dp["is_granted"],
+            )
+            for dp in sanitized_direct_payload
+        ]
+
+        logger.info(
+            f"Successfully rolled back RBAC state for user '{target_username}' ({user_id}) to snapshot {target_snapshot_id}."
+        )
+
+        return UserRollbackResponse(
+            status=True,
+            message=f"Successfully rolled back RBAC state for user {target_username} to snapshot {target_snapshot_id}.",
+            user_id=user_id,
+            username=target_username,
+            restored_from_snapshot_id=target_snapshot_id,
+            restored_roles=assigned_role_names,
+            restored_direct_permissions=direct_items,
+            effective_permissions=effective_perms,
+            total_effective_permissions=len(effective_perms),
+        )

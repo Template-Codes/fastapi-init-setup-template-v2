@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from exceptions.app_exception import (
+    BadRequestException,
     ConflictException,
     ForbiddenException,
     NotFoundException,
@@ -38,6 +39,11 @@ def mock_rbac_repo():
     repo.create_role_permission_snapshot = AsyncMock()
     repo.get_role_permission_history = AsyncMock(return_value=[])
     repo.get_user_rbac_history = AsyncMock(return_value=[])
+    repo.get_role_permission_snapshot_by_id = AsyncMock(return_value=None)
+    repo.get_user_rbac_snapshot_by_id = AsyncMock(return_value=None)
+    repo.restore_user_direct_permissions = AsyncMock()
+    repo.get_user_ids_by_role = AsyncMock(return_value=[])
+    repo.resolve_roles = AsyncMock(return_value=[])
     return repo
 
 
@@ -766,5 +772,245 @@ async def test_get_user_rbac_history_system_snapshot(rbac_service, mock_rbac_rep
     assert item.updated_by.user_id is None
     assert item.updated_by.username == "SYSTEM"
     assert item.reason == "System startup lifespan pruning: detached obsolete role(s)"
+
+
+@pytest.mark.asyncio
+async def test_rollback_role_permissions_success(rbac_service, mock_rbac_repo, mock_cache_utils):
+    """Test successful rollback of role permissions to a historical snapshot."""
+    role_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    perm_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "STAFF_USER"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.role_id = role_id
+    mock_snapshot.created_at = datetime(2026, 10, 10, 12, 0, 0, tzinfo=timezone.utc)
+    mock_snapshot.permissions_payload = [{"id": str(perm_id), "code": "PROFILE:USER:READ"}]
+    mock_rbac_repo.get_role_permission_snapshot_by_id = AsyncMock(return_value=mock_snapshot)
+
+    mock_perm = MagicMock(spec=Permission)
+    mock_perm.id = perm_id
+    mock_perm.code = "PROFILE:USER:READ"
+    mock_rbac_repo.resolve_permissions = AsyncMock(return_value=[mock_perm])
+    mock_rbac_repo.assign_permissions_to_role = AsyncMock(return_value=["PROFILE:USER:READ"])
+    mock_rbac_repo.get_user_ids_by_role = AsyncMock(return_value=[uuid.uuid4()])
+
+    # Mock operator permissions (SUPER_ADMIN)
+    operator_payload = MagicMock()
+    operator_payload.roles = ["SUPER_ADMIN"]
+    operator_payload.permissions = ["PROFILE:USER:READ"]
+    rbac_service.get_or_cache_user_permissions = AsyncMock(return_value=operator_payload)
+    rbac_service.invalidate_user_permissions = AsyncMock()
+
+    res = await rbac_service.rollback_role_permissions(
+        operator_id=operator_id,
+        role_identifier="STAFF_USER",
+        snapshot_id=snapshot_id,
+        reason="Incident recovery",
+    )
+
+    assert res.status is True
+    assert res.role_name == "STAFF_USER"
+    assert res.restored_from_snapshot_id == snapshot_id
+    assert res.restored_permissions == ["PROFILE:USER:READ"]
+    assert res.total_permissions == 1
+    mock_rbac_repo.assign_permissions_to_role.assert_awaited_once_with(role_id, [perm_id])
+    mock_rbac_repo.create_role_permission_snapshot.assert_awaited_once()
+    mock_rbac_repo.db.commit.assert_awaited_once()
+    rbac_service.invalidate_user_permissions.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rollback_role_permissions_super_admin_refusal(rbac_service, mock_rbac_repo):
+    """Test immutability check refuses rollback on SUPER_ADMIN role."""
+    role_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "SUPER_ADMIN"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+
+    with pytest.raises(ForbiddenException):
+        await rbac_service.rollback_role_permissions(
+            operator_id=operator_id,
+            role_identifier="SUPER_ADMIN",
+            snapshot_id=snapshot_id,
+            reason="Illegal attempt",
+        )
+
+
+@pytest.mark.asyncio
+async def test_rollback_role_permissions_mismatch(rbac_service, mock_rbac_repo):
+    """Test error raised when snapshot role_id does not match target role."""
+    role_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "STAFF_USER"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+
+    operator_payload = MagicMock()
+    operator_payload.roles = ["SUPER_ADMIN"]
+    rbac_service.get_or_cache_user_permissions = AsyncMock(return_value=operator_payload)
+
+    # Snapshot belongs to a different role
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.role_id = uuid.uuid4()
+    mock_rbac_repo.get_role_permission_snapshot_by_id = AsyncMock(return_value=mock_snapshot)
+
+    with pytest.raises(BadRequestException):
+        await rbac_service.rollback_role_permissions(
+            operator_id=operator_id,
+            role_identifier="STAFF_USER",
+            snapshot_id=snapshot_id,
+            reason="Mismatch test",
+        )
+
+
+@pytest.mark.asyncio
+async def test_rollback_user_rbac_success(
+    rbac_service, mock_rbac_repo, mock_auth_repo, mock_session_repo
+):
+    """Test successful rollback of a user's roles and direct permissions to a snapshot."""
+    operator_id = uuid.uuid4()
+    target_user_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    role_id = uuid.uuid4()
+    perm_id = uuid.uuid4()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = target_user_id
+    mock_user.username = "target_emp"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=mock_user)
+
+    operator_payload = MagicMock()
+    operator_payload.roles = ["SUPER_ADMIN"]
+    operator_payload.permissions = ["PROFILE:USER:READ"]
+
+    target_payload = MagicMock()
+    target_payload.roles = ["ADMIN"]  # Rank 50
+    target_payload.permissions = []
+
+    async def mock_get_perms(uid):
+        if uid == operator_id:
+            return operator_payload
+        return target_payload
+
+    rbac_service.get_or_cache_user_permissions = AsyncMock(side_effect=mock_get_perms)
+    rbac_service.invalidate_user_permissions = AsyncMock()
+    rbac_service._capture_user_rbac_snapshot = AsyncMock()
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.user_id = target_user_id
+    mock_snapshot.created_at = datetime(2026, 10, 10, 10, 0, 0, tzinfo=timezone.utc)
+    mock_snapshot.roles_payload = [{"id": str(role_id), "name": "STAFF_USER", "rank": 10}]
+    mock_snapshot.direct_permissions_payload = [
+        {"id": str(perm_id), "code": "PROFILE:USER:READ", "is_granted": True}
+    ]
+    mock_rbac_repo.get_user_rbac_snapshot_by_id = AsyncMock(return_value=mock_snapshot)
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "STAFF_USER"
+    mock_rbac_repo.resolve_roles = AsyncMock(return_value=[mock_role])
+    mock_rbac_repo.assign_roles_to_user = AsyncMock(return_value=["STAFF_USER"])
+
+    mock_perm = MagicMock(spec=Permission)
+    mock_perm.id = perm_id
+    mock_perm.code = "PROFILE:USER:READ"
+    mock_rbac_repo.resolve_permissions = AsyncMock(return_value=[mock_perm])
+    mock_rbac_repo.get_user_roles_and_permissions = AsyncMock(
+        return_value={"roles": ["STAFF_USER"], "permissions": ["PROFILE:USER:READ"]}
+    )
+
+    res = await rbac_service.rollback_user_rbac(
+        operator_id=operator_id,
+        user_id=target_user_id,
+        snapshot_id=snapshot_id,
+        reason="Security rollback to last safe state",
+    )
+
+    assert res.status is True
+    assert res.user_id == target_user_id
+    assert res.username == "target_emp"
+    assert res.restored_from_snapshot_id == snapshot_id
+    assert res.restored_roles == ["STAFF_USER"]
+    assert len(res.restored_direct_permissions) == 1
+    assert res.restored_direct_permissions[0].code == "PROFILE:USER:READ"
+    assert res.restored_direct_permissions[0].is_granted is True
+    # Demotion occurred (from ADMIN rank 50 to STAFF_USER rank 10), so session was deactivated
+    mock_session_repo.deactivate_all_active_by_user_id.assert_awaited_once_with(target_user_id)
+    mock_rbac_repo.db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rollback_user_rbac_self_mutation_refusal(rbac_service):
+    """Test refusal when operator attempts to roll back their own RBAC state."""
+    same_id = uuid.uuid4()
+    with pytest.raises(ForbiddenException):
+        await rbac_service.rollback_user_rbac(
+            operator_id=same_id,
+            user_id=same_id,
+            snapshot_id=uuid.uuid4(),
+            reason="Self modification forbidden",
+        )
+
+
+@pytest.mark.asyncio
+async def test_rollback_user_rbac_last_super_admin_lockout(
+    rbac_service, mock_rbac_repo, mock_auth_repo
+):
+    """Test lockout protection prevents demoting the last active Super Admin via rollback."""
+    operator_id = uuid.uuid4()
+    target_user_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = target_user_id
+    mock_user.username = "last_super_admin"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=mock_user)
+
+    operator_payload = MagicMock()
+    operator_payload.roles = ["SUPER_ADMIN"]
+
+    target_payload = MagicMock()
+    target_payload.roles = ["SUPER_ADMIN"]  # Currently is super admin
+
+    async def mock_get_perms(uid):
+        if uid == operator_id:
+            return operator_payload
+        return target_payload
+
+    rbac_service.get_or_cache_user_permissions = AsyncMock(side_effect=mock_get_perms)
+
+    # Snapshot does not have SUPER_ADMIN
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.user_id = target_user_id
+    mock_snapshot.roles_payload = [{"id": str(uuid.uuid4()), "name": "ADMIN", "rank": 50}]
+    mock_snapshot.direct_permissions_payload = []
+    mock_rbac_repo.get_user_rbac_snapshot_by_id = AsyncMock(return_value=mock_snapshot)
+    mock_rbac_repo.count_active_super_admins = AsyncMock(return_value=1)  # Only 1 left!
+
+    with pytest.raises(ConflictException):
+        await rbac_service.rollback_user_rbac(
+            operator_id=operator_id,
+            user_id=target_user_id,
+            snapshot_id=snapshot_id,
+            reason="Attempted lockout",
+        )
+
 
 

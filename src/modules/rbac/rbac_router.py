@@ -15,11 +15,15 @@ from modules.rbac.rbac_schema import (
     RemoveUserDirectPermissionsPayload,
     ReviewChangeRequestPayload,
     RolePermissionAssignmentResponse,
+    RoleRollbackPayload,
+    RoleRollbackResponse,
     RoleSnapshotHistoryResponse,
     UserDirectPermissionsResponse,
     UserRBACListItemResponse,
     UserRBACSummaryResponse,
     UserRoleAssignmentResponse,
+    UserRollbackPayload,
+    UserRollbackResponse,
     UserSnapshotHistoryResponse,
 )
 from modules.rbac.rbac_service import RBACService
@@ -127,6 +131,27 @@ async def get_user_rbac_history(
         to_date=to_date,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.post(
+    "/users/{user_id}/rollback",
+    summary="Rollback user RBAC state to a selected point-in-time snapshot.",
+    status_code=status.HTTP_200_OK,
+    response_model=UserRollbackResponse,
+)
+async def rollback_user_rbac(
+    user_id: UUID,
+    payload: UserRollbackPayload,
+    operator_id: UUID = Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    service: RBACService = Depends(),
+) -> UserRollbackResponse:
+    """Restores user roles and direct permissions to a historical snapshot and invalidates caches/sessions."""
+    return await service.rollback_user_rbac(
+        operator_id=operator_id,
+        user_id=user_id,
+        snapshot_id=payload.snapshot_id,
+        reason=payload.reason,
     )
 
 
@@ -309,6 +334,27 @@ async def get_role_permission_history(
         to_date=to_date,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.post(
+    "/roles/{role_identifier}/rollback",
+    summary="Rollback role permissions to a selected point-in-time snapshot.",
+    status_code=status.HTTP_200_OK,
+    response_model=RoleRollbackResponse,
+)
+async def rollback_role_permissions(
+    role_identifier: str,
+    payload: RoleRollbackPayload,
+    operator_id: UUID = Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    service: RBACService = Depends(),
+) -> RoleRollbackResponse:
+    """Restores role permissions to a historical point-in-time snapshot and invalidates affected caches."""
+    return await service.rollback_role_permissions(
+        operator_id=operator_id,
+        role_identifier=role_identifier,
+        snapshot_id=payload.snapshot_id,
+        reason=payload.reason,
     )
 
 
