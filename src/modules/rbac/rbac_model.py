@@ -8,6 +8,8 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
+    JSON,
     String,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -183,3 +185,77 @@ class RBACChangeRequest(Base, TimestampMixin):
     )
     review_notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RolePermissionSnapshot(Base, TimestampMixin):
+    """Immutable point-in-time snapshot of role permissions for audit and rollback."""
+
+    __tablename__ = "role_permission_snapshots"
+    __table_args__ = (
+        Index("ix_rbac_role_snapshots_role_created", "role_id", "created_at"),
+        {"schema": "rbac"},
+    )
+
+    id: Mapped[uuid_pk]
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("rbac.roles.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    permissions_payload: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+    )  # List of {"id": str, "code": str}
+    changed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Relationships
+    role: Mapped["Role"] = relationship("Role", foreign_keys=[role_id])
+    changed_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[changed_by_id])
+
+
+class UserRBACSnapshot(Base, TimestampMixin):
+    """Immutable point-in-time snapshot of user roles, direct permissions, and effective permissions."""
+
+    __tablename__ = "user_rbac_snapshots"
+    __table_args__ = (
+        Index("ix_rbac_user_snapshots_user_created", "user_id", "created_at"),
+        {"schema": "rbac"},
+    )
+
+    id: Mapped[uuid_pk]
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    roles_payload: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+    )  # List of {"id": str, "name": str, "rank": int}
+    direct_permissions_payload: Mapped[list] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )  # List of {"id": str, "code": str, "is_granted": bool}
+    effective_permissions_payload: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+    )  # List of {"id": str, "code": str}
+    changed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    changed_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[changed_by_id])
+

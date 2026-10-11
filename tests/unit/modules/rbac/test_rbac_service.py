@@ -4,7 +4,6 @@ import uuid
 import pytest
 
 from exceptions.app_exception import (
-    BadRequestException,
     ConflictException,
     ForbiddenException,
     NotFoundException,
@@ -19,12 +18,10 @@ from modules.rbac.rbac_model import (
 )
 from modules.rbac.rbac_schema import (
     AssignUserDirectPermissionsPayload,
-    BatchRolePermissionAssignmentPayload,
     ReviewChangeRequestPayload,
-    RoleAssignmentItem,
 )
 from modules.rbac.rbac_service import RBACService
-from shares.enums import RoleName, SystemPermission
+from shares.enums import SystemPermission
 
 
 @pytest.fixture
@@ -32,9 +29,15 @@ def mock_rbac_repo():
     repo = MagicMock()
     repo.db = MagicMock()
     repo.db.commit = AsyncMock()
+    repo.db.expire_all = MagicMock()
     repo.count_active_super_admins = AsyncMock(return_value=2)
     repo.assign_roles_to_user = AsyncMock(return_value=[])
     repo.get_user_roles_and_permissions = AsyncMock(return_value={"roles": [], "permissions": []})
+    repo.get_user_with_rbac_details = AsyncMock(return_value=None)
+    repo.create_user_rbac_snapshot = AsyncMock()
+    repo.create_role_permission_snapshot = AsyncMock()
+    repo.get_role_permission_history = AsyncMock(return_value=[])
+    repo.get_user_rbac_history = AsyncMock(return_value=[])
     return repo
 
 
@@ -453,3 +456,315 @@ async def test_reject_change_request_success(rbac_service, mock_rbac_repo, mock_
     assert mock_req.reviewed_by_id == reviewer_id
     assert mock_req.review_notes == "Elevation denied after review."
     mock_rbac_repo.db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_role_permission_history_success(rbac_service, mock_rbac_repo):
+    """Test retrieving role permission history returns formatted snapshots."""
+    role_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    perm_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "STAFF_USER"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+
+    mock_operator = MagicMock(spec=User)
+    mock_operator.id = operator_id
+    mock_operator.username = "super_admin"
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.role_id = role_id
+    mock_snapshot.role = mock_role
+    mock_snapshot.created_at = datetime(2026, 10, 10, 14, 0, 0, tzinfo=timezone.utc)
+    mock_snapshot.permissions_payload = [{"id": str(perm_id), "code": "AUTHENTICATION:USER:READ"}]
+    mock_snapshot.changed_by = mock_operator
+    mock_snapshot.changed_by_id = operator_id
+    mock_snapshot.reason = "Quarterly audit update"
+
+    mock_rbac_repo.get_role_permission_history = AsyncMock(return_value=[mock_snapshot])
+
+    results = await rbac_service.get_role_permission_history("STAFF_USER")
+
+    assert len(results) == 1
+    item = results[0]
+    assert item.snapshot_id == snapshot_id
+    assert item.role_id == role_id
+    assert item.role_name == "STAFF_USER"
+    assert item.total_permissions == 1
+    assert len(item.permissions) == 1
+    assert item.permissions[0].id == perm_id
+    assert item.permissions[0].code == "AUTHENTICATION:USER:READ"
+    assert item.updated_by.user_id == operator_id
+    assert item.updated_by.username == "super_admin"
+    assert item.reason == "Quarterly audit update"
+
+
+@pytest.mark.asyncio
+async def test_get_role_permission_history_not_found(rbac_service, mock_rbac_repo):
+    """Test retrieving history for non-existent role raises NotFoundException."""
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=None)
+    with pytest.raises(NotFoundException):
+        await rbac_service.get_role_permission_history("UNKNOWN_ROLE")
+
+
+@pytest.mark.asyncio
+async def test_get_all_roles_permission_history_all(rbac_service, mock_rbac_repo):
+    """Test retrieving history across all roles without role filter."""
+    role_id_1 = uuid.uuid4()
+    role_id_2 = uuid.uuid4()
+    snap_id_1 = uuid.uuid4()
+    snap_id_2 = uuid.uuid4()
+    perm_id = uuid.uuid4()
+
+    mock_role_1 = MagicMock(spec=Role)
+    mock_role_1.id = role_id_1
+    mock_role_1.name = "ADMIN"
+
+    mock_role_2 = MagicMock(spec=Role)
+    mock_role_2.id = role_id_2
+    mock_role_2.name = "STAFF_USER"
+
+    mock_snap_1 = MagicMock()
+    mock_snap_1.id = snap_id_1
+    mock_snap_1.role_id = role_id_1
+    mock_snap_1.role = mock_role_1
+    mock_snap_1.created_at = datetime(2026, 10, 11, 10, 0, 0, tzinfo=timezone.utc)
+    mock_snap_1.permissions_payload = [{"id": str(perm_id), "code": "PROFILE:USER:READ"}]
+    mock_snap_1.changed_by = None
+    mock_snap_1.changed_by_id = None
+    mock_snap_1.reason = "System startup sync"
+
+    mock_snap_2 = MagicMock()
+    mock_snap_2.id = snap_id_2
+    mock_snap_2.role_id = role_id_2
+    mock_snap_2.role = mock_role_2
+    mock_snap_2.created_at = datetime(2026, 10, 11, 9, 0, 0, tzinfo=timezone.utc)
+    mock_snap_2.permissions_payload = []
+    mock_snap_2.changed_by = None
+    mock_snap_2.changed_by_id = None
+    mock_snap_2.reason = "Default init"
+
+    mock_rbac_repo.get_role_permission_history = AsyncMock(return_value=[mock_snap_1, mock_snap_2])
+
+    results = await rbac_service.get_all_roles_permission_history()
+
+    mock_rbac_repo.get_role_permission_history.assert_awaited_once_with(
+        role_id=None,
+        from_date=None,
+        to_date=None,
+        limit=50,
+        offset=0,
+    )
+    assert len(results) == 2
+    assert results[0].role_name == "ADMIN"
+    assert results[0].updated_by.username == "SYSTEM"
+    assert results[1].role_name == "STAFF_USER"
+
+
+@pytest.mark.asyncio
+async def test_get_all_roles_permission_history_filtered(rbac_service, mock_rbac_repo):
+    """Test retrieving history across all roles with role filter."""
+    role_id = uuid.uuid4()
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "ADMIN"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+    mock_rbac_repo.get_role_permission_history = AsyncMock(return_value=[])
+
+    results = await rbac_service.get_all_roles_permission_history(role_identifier="ADMIN")
+
+    mock_rbac_repo.get_role_permission_history.assert_awaited_once_with(
+        role_id=role_id,
+        from_date=None,
+        to_date=None,
+        limit=50,
+        offset=0,
+    )
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_get_user_rbac_history_success(rbac_service, mock_rbac_repo, mock_auth_repo):
+    """Test retrieving user RBAC history returns formatted timeline snapshots."""
+    user_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    role_id = uuid.uuid4()
+    perm_id_1 = uuid.uuid4()
+    perm_id_2 = uuid.uuid4()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = user_id
+    mock_user.username = "john_doe"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=mock_user)
+
+    mock_operator = MagicMock(spec=User)
+    mock_operator.id = operator_id
+    mock_operator.username = "super_admin"
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.user_id = user_id
+    mock_snapshot.user = mock_user
+    mock_snapshot.created_at = datetime(2026, 10, 10, 14, 30, 0, tzinfo=timezone.utc)
+    mock_snapshot.roles_payload = [{"id": str(role_id), "name": "STAFF_USER", "rank": 10}]
+    mock_snapshot.direct_permissions_payload = [
+        {"id": str(perm_id_1), "code": "INVENTORY:ITEM:CREATE", "is_granted": True}
+    ]
+    mock_snapshot.effective_permissions_payload = [
+        {"id": str(perm_id_2), "code": "AUTHENTICATION:USER:READ"},
+        {"id": str(perm_id_1), "code": "INVENTORY:ITEM:CREATE"},
+    ]
+    mock_snapshot.changed_by = mock_operator
+    mock_snapshot.changed_by_id = operator_id
+    mock_snapshot.reason = "Promoted to inventory coordinator"
+
+    mock_rbac_repo.get_user_rbac_history = AsyncMock(return_value=[mock_snapshot])
+
+    results = await rbac_service.get_user_rbac_history(user_id)
+
+    assert len(results) == 1
+    item = results[0]
+    assert item.snapshot_id == snapshot_id
+    assert item.user_id == user_id
+    assert item.username == "john_doe"
+    assert len(item.roles) == 1
+    assert item.roles[0].name == "STAFF_USER"
+    assert len(item.direct_permissions) == 1
+    assert item.direct_permissions[0].code == "INVENTORY:ITEM:CREATE"
+    assert item.total_permissions == 2
+    assert len(item.effective_permissions) == 2
+    assert item.updated_by.user_id == operator_id
+    assert item.updated_by.username == "super_admin"
+    assert item.reason == "Promoted to inventory coordinator"
+
+
+@pytest.mark.asyncio
+async def test_get_user_rbac_history_not_found(rbac_service, mock_auth_repo):
+    """Test retrieving history for non-existent user raises NotFoundException."""
+    mock_auth_repo.get_by_id = AsyncMock(return_value=None)
+    with pytest.raises(NotFoundException):
+        await rbac_service.get_user_rbac_history(uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_capture_user_rbac_snapshot_full_flow(rbac_service, mock_rbac_repo):
+    """Test _capture_user_rbac_snapshot correctly calculates effective set and calls repository."""
+    user_id = uuid.uuid4()
+    operator_id = uuid.uuid4()
+    role_id = uuid.uuid4()
+    perm_read_id = uuid.uuid4()
+    perm_create_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "STAFF_USER"
+    mock_perm_read = MagicMock(spec=Permission)
+    mock_perm_read.id = perm_read_id
+    mock_perm_read.code = SystemPermission.AUTHENTICATION_USER_READ.value
+    mock_role.permissions = [mock_perm_read]
+
+    mock_perm_create = MagicMock(spec=Permission)
+    mock_perm_create.id = perm_create_id
+    mock_perm_create.code = SystemPermission.AUTHENTICATION_USER_CREATE.value
+
+    mock_up = MagicMock(spec=UserPermission)
+    mock_up.permission = mock_perm_create
+    mock_up.is_granted = True
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = user_id
+    mock_user.roles = [mock_role]
+    mock_user.direct_permissions = [mock_up]
+
+    mock_rbac_repo.get_user_with_rbac_details = AsyncMock(return_value=mock_user)
+
+    await rbac_service._capture_user_rbac_snapshot(
+        user_id=user_id,
+        changed_by_id=operator_id,
+        reason="Testing snapshot capture",
+    )
+
+    mock_rbac_repo.create_user_rbac_snapshot.assert_awaited_once()
+    kwargs = mock_rbac_repo.create_user_rbac_snapshot.call_args.kwargs
+    assert kwargs["user_id"] == user_id
+    assert kwargs["changed_by_id"] == operator_id
+    assert kwargs["reason"] == "Testing snapshot capture"
+    assert len(kwargs["roles_payload"]) == 1
+    assert kwargs["roles_payload"][0]["name"] == "STAFF_USER"
+    assert len(kwargs["direct_permissions_payload"]) == 1
+    assert len(kwargs["effective_permissions_payload"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_role_permission_history_system_snapshot(rbac_service, mock_rbac_repo):
+    """Test role history gracefully formats system-originated snapshots with changed_by=None."""
+    role_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    perm_id = uuid.uuid4()
+
+    mock_role = MagicMock(spec=Role)
+    mock_role.id = role_id
+    mock_role.name = "ADMIN"
+    mock_rbac_repo.get_role_by_identifier = AsyncMock(return_value=mock_role)
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.role_id = role_id
+    mock_snapshot.role = mock_role
+    mock_snapshot.created_at = datetime(2026, 10, 11, 8, 0, 0, tzinfo=timezone.utc)
+    mock_snapshot.permissions_payload = [{"id": str(perm_id), "code": "AUTHENTICATION:USER:READ"}]
+    mock_snapshot.changed_by = None
+    mock_snapshot.changed_by_id = None
+    mock_snapshot.reason = "System startup enum synchronization: linked 1 default permission(s)"
+
+    mock_rbac_repo.get_role_permission_history = AsyncMock(return_value=[mock_snapshot])
+
+    results = await rbac_service.get_role_permission_history("ADMIN")
+
+    assert len(results) == 1
+    item = results[0]
+    assert item.updated_by.user_id is None
+    assert item.updated_by.username == "SYSTEM"
+    assert item.reason == "System startup enum synchronization: linked 1 default permission(s)"
+
+
+@pytest.mark.asyncio
+async def test_get_user_rbac_history_system_snapshot(rbac_service, mock_rbac_repo, mock_auth_repo):
+    """Test user history gracefully formats system-originated snapshots with changed_by=None."""
+    user_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    role_id = uuid.uuid4()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = user_id
+    mock_user.username = "test_user"
+    mock_auth_repo.get_by_id = AsyncMock(return_value=mock_user)
+
+    mock_snapshot = MagicMock()
+    mock_snapshot.id = snapshot_id
+    mock_snapshot.user_id = user_id
+    mock_snapshot.user = mock_user
+    mock_snapshot.created_at = datetime(2026, 10, 11, 8, 0, 0, tzinfo=timezone.utc)
+    mock_snapshot.roles_payload = [{"id": str(role_id), "name": "PUBLIC_USER", "rank": 0}]
+    mock_snapshot.direct_permissions_payload = []
+    mock_snapshot.effective_permissions_payload = []
+    mock_snapshot.changed_by = None
+    mock_snapshot.changed_by_id = None
+    mock_snapshot.reason = "System startup lifespan pruning: detached obsolete role(s)"
+
+    mock_rbac_repo.get_user_rbac_history = AsyncMock(return_value=[mock_snapshot])
+
+    results = await rbac_service.get_user_rbac_history(user_id)
+
+    assert len(results) == 1
+    item = results[0]
+    assert item.updated_by.user_id is None
+    assert item.updated_by.username == "SYSTEM"
+    assert item.reason == "System startup lifespan pruning: detached obsolete role(s)"
+
+

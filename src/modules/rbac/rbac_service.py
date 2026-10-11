@@ -11,16 +11,15 @@ from exceptions.app_exception import (
     ForbiddenException,
     NotFoundException,
 )
-from modules.rbac.rbac_model import RBACChangeRequest, RBACChangeRequestStatus
+from modules.rbac.rbac_model import RBACChangeRequestStatus
 from modules.authentication.auth_repository import AuthenticationRepository
 from modules.rbac.rbac_repository import RBACRepository
 from modules.rbac.rbac_schema import (
-    AssignRolePermissionsPayload,
     AssignUserDirectPermissionsPayload,
-    AssignUserRolesPayload,
     BatchRolePermissionAssignmentPayload,
     BatchRolePermissionAssignmentResponse,
     ModuleSchema,
+    OperatorSummarySchema,
     PermissionSimpleSchema,
     RBACChangeRequestResponse,
     RBACConfigResponse,
@@ -28,16 +27,17 @@ from modules.rbac.rbac_schema import (
     RoleOverviewSchema,
     RolePermissionAssignmentResponse,
     RoleSimpleSchema,
+    RoleSnapshotHistoryResponse,
     UserDirectPermissionsResponse,
     UserPermissionsCachePayload,
     UserRBACListItemResponse,
     UserRBACSummaryResponse,
     UserRoleAssignmentResponse,
+    UserSnapshotHistoryResponse,
 )
 from modules.session.session_repo import UserSessionRepository
 from shares.enums import (
     ROLE_DEFAULT_PERMISSIONS,
-    ROLE_RANKS,
     RoleName,
     SystemPermission,
     build_rbac_hierarchy,
@@ -65,6 +65,7 @@ class RBACService:
         self.auth_repo = auth_repo
         self.session_repo = session_repo
         self.cache_utils = cache_utils
+
 
     async def get_or_cache_user_permissions(self, user_id: UUID) -> UserPermissionsCachePayload:
         """
@@ -97,12 +98,14 @@ class RBACService:
             permissions=db_payload.get("permissions", []),
         )
 
+
     async def invalidate_user_permissions(self, user_id: UUID) -> None:
         """
         Invalidates cached permissions for a user in Redis.
         Must be called post-commit when mutating roles or direct permissions.
         """
         await self.cache_utils.invalidate_user_permission_cache(str(user_id))
+
 
     async def get_rbac_configuration(self) -> RBACConfigResponse:
         """
@@ -130,6 +133,7 @@ class RBACService:
             roles=roles_overview,
         )
 
+
     async def get_user_rbac_summary(self, user_id: UUID) -> UserRBACSummaryResponse:
         """Retrieves user's assigned roles, direct grants, explicit denials, and effective permissions."""
         user = await self.auth_repo.get_by_id(user_id)
@@ -150,6 +154,7 @@ class RBACService:
             direct_revocations=db_payload.get("direct_revocations", []),
             permissions=db_payload.get("permissions", []),
         )
+
 
     async def list_all_users_rbac_summary(
         self,
@@ -222,6 +227,66 @@ class RBACService:
             )
 
         return results
+
+
+    async def _capture_user_rbac_snapshot(
+        self,
+        user_id: UUID,
+        changed_by_id: UUID,
+        reason: str,
+    ) -> None:
+        """
+        Captures an immutable point-in-time snapshot of user roles, direct permissions,
+        and resolved effective permissions.
+        """
+        self.rbac_repo.db.expire_all()
+        user_rbac_user = await self.rbac_repo.get_user_with_rbac_details(user_id)
+        if not user_rbac_user:
+            return
+
+        valid_role_names = {r.value for r in RoleName}
+        valid_perm_codes = {p.value for p in SystemPermission}
+
+        active_roles = [r for r in user_rbac_user.roles if r.name in valid_role_names]
+        roles_payload = [
+            {"id": str(r.id), "name": r.name, "rank": get_role_rank(r.name)}
+            for r in active_roles
+        ]
+
+        direct_permissions_payload = []
+        effective_map: dict[str, dict] = {}
+
+        # 1. Role-based permissions
+        for r in active_roles:
+            for p in r.permissions:
+                if p.code in valid_perm_codes:
+                    effective_map[p.code] = {"id": str(p.id), "code": p.code}
+
+        # 2. Direct permissions
+        for up in user_rbac_user.direct_permissions:
+            p = up.permission
+            if p and p.code in valid_perm_codes:
+                direct_permissions_payload.append({
+                    "id": str(p.id),
+                    "code": p.code,
+                    "is_granted": up.is_granted,
+                })
+                if up.is_granted:
+                    effective_map[p.code] = {"id": str(p.id), "code": p.code}
+                else:
+                    effective_map.pop(p.code, None)
+
+        effective_permissions_payload = sorted(list(effective_map.values()), key=lambda x: x["code"])
+
+        await self.rbac_repo.create_user_rbac_snapshot(
+            user_id=user_id,
+            roles_payload=roles_payload,
+            direct_permissions_payload=direct_permissions_payload,
+            effective_permissions_payload=effective_permissions_payload,
+            changed_by_id=changed_by_id,
+            reason=reason,
+        )
+
 
     async def assign_roles_to_user(
         self,
@@ -335,6 +400,7 @@ class RBACService:
         # Direct execution: Apply role assignment
         role_ids = [r.id for r in matched_roles]
         assigned_role_names = await self.rbac_repo.assign_roles_to_user(user_id, role_ids)
+        await self._capture_user_rbac_snapshot(user_id, operator_id, reason)
         await self.rbac_repo.db.commit()
 
         # Invalidate permission cache post-commit
@@ -359,6 +425,7 @@ class RBACService:
             requires_approval=False,
             request_id=None,
         )
+
 
     async def assign_direct_permissions_to_user(
         self,
@@ -423,6 +490,7 @@ class RBACService:
             assigned_by_id=operator_id,
             reason=payload.reason,
         )
+        await self._capture_user_rbac_snapshot(user_id, operator_id, payload.reason)
         await self.rbac_repo.db.commit()
 
         # Invalidate permission cache post-commit
@@ -441,6 +509,7 @@ class RBACService:
             direct_grants=updated_summary.get("direct_grants", []),
             direct_revocations=updated_summary.get("direct_revocations", []),
         )
+
 
     async def remove_direct_permissions_from_user(
         self,
@@ -481,6 +550,7 @@ class RBACService:
 
         perm_ids = [p.id for p in matched_perms]
         await self.rbac_repo.remove_user_direct_permissions(user_id, perm_ids)
+        await self._capture_user_rbac_snapshot(user_id, operator_id, reason)
         await self.rbac_repo.db.commit()
 
         await self.invalidate_user_permissions(user_id)
@@ -494,6 +564,7 @@ class RBACService:
             direct_grants=updated_summary.get("direct_grants", []),
             direct_revocations=updated_summary.get("direct_revocations", []),
         )
+
 
     async def assign_permissions_to_role(
         self,
@@ -562,6 +633,15 @@ class RBACService:
             role.id, perm_ids
         )
 
+        # Capture immutable point-in-time snapshot
+        perm_payload = [{"id": str(p.id), "code": p.code} for p in matched_perms]
+        await self.rbac_repo.create_role_permission_snapshot(
+            role_id=role.id,
+            permissions_payload=perm_payload,
+            changed_by_id=operator_id,
+            reason=reason,
+        )
+
         await self.rbac_repo.db.commit()
 
         # Invalidate cache post-commit for all users holding this role
@@ -582,6 +662,7 @@ class RBACService:
             requires_approval=False,
             request_id=None,
         )
+
 
     async def batch_assign_role_permissions(
         self,
@@ -636,6 +717,16 @@ class RBACService:
 
             perm_ids = [p.id for p in matched_perms]
             await self.rbac_repo.assign_permissions_to_role(role.id, perm_ids)
+
+            # Capture immutable point-in-time snapshot
+            perm_payload = [{"id": str(p.id), "code": p.code} for p in matched_perms]
+            await self.rbac_repo.create_role_permission_snapshot(
+                role_id=role.id,
+                permissions_payload=perm_payload,
+                changed_by_id=operator_id,
+                reason=payload.reason,
+            )
+
             updated_role_names.append(role.name)
 
             affected_users = await self.rbac_repo.get_user_ids_by_role(role.id)
@@ -655,6 +746,7 @@ class RBACService:
             message=f"Successfully batch updated permissions for {len(updated_role_names)} roles.",
             updated_roles=updated_role_names,
         )
+
 
     async def reset_role_to_defaults(
         self,
@@ -692,6 +784,7 @@ class RBACService:
             reason="Reset to code-defined default permissions.",
         )
 
+
     async def list_pending_change_requests(
         self,
         operator_id: UUID,
@@ -715,6 +808,7 @@ class RBACService:
             )
             for req in requests
         ]
+
 
     async def review_change_request(
         self,
@@ -778,6 +872,11 @@ class RBACService:
                 matched_roles = await self.rbac_repo.resolve_roles(requested_roles)
                 role_ids = [r.id for r in matched_roles]
                 await self.rbac_repo.assign_roles_to_user(req.target_user_id, role_ids)
+                await self._capture_user_rbac_snapshot(
+                    req.target_user_id,
+                    operator_id,
+                    f"Approved change request {req.id}: {req.reason}",
+                )
 
             req.status = RBACChangeRequestStatus.APPROVED
             req.reviewed_by_id = operator_id
@@ -813,6 +912,147 @@ class RBACService:
             reviewed_at=req.reviewed_at,
         )
 
+
     async def sync_enums_to_db(self) -> dict:
         """Invokes idempotent synchronization of enums with database tables."""
         return await self.rbac_repo.sync_enums_to_db()
+
+
+    async def get_all_roles_permission_history(
+        self,
+        role_identifier: Optional[str] = None,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[RoleSnapshotHistoryResponse]:
+        """
+        Retrieves chronological point-in-time permission snapshots across all roles
+        or filtered by a specific role.
+        """
+        role_id: Optional[UUID] = None
+        if role_identifier:
+            role = await self.rbac_repo.get_role_by_identifier(role_identifier)
+            if not role:
+                logger.warning(f"Role '{role_identifier}' not found for history query.")
+                raise NotFoundException(
+                    message=f"Role '{role_identifier}' not found or is no longer active in enums.",
+                    error_code="ROLE_NOT_FOUND",
+                )
+            role_id = role.id
+
+        snapshots = await self.rbac_repo.get_role_permission_history(
+            role_id=role_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+
+        results: List[RoleSnapshotHistoryResponse] = []
+        for s in snapshots:
+            perms = [
+                PermissionSimpleSchema(id=UUID(p["id"]), code=p["code"])
+                for p in s.permissions_payload
+            ]
+            results.append(
+                RoleSnapshotHistoryResponse(
+                    snapshot_id=s.id,
+                    role_id=s.role_id,
+                    role_name=s.role.name if s.role else "UNKNOWN",
+                    timestamp=s.created_at,
+                    permissions=perms,
+                    total_permissions=len(perms),
+                    updated_by=OperatorSummarySchema(
+                        user_id=s.changed_by.id if s.changed_by else s.changed_by_id,
+                        username=s.changed_by.username if s.changed_by else "SYSTEM",
+                    ),
+                    reason=s.reason,
+                )
+            )
+        return results
+
+    async def get_role_permission_history(
+        self,
+        role_identifier: str,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[RoleSnapshotHistoryResponse]:
+        """
+        Retrieves chronological point-in-time permission snapshots for a role.
+        """
+        return await self.get_all_roles_permission_history(
+            role_identifier=role_identifier,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+
+
+    async def get_user_rbac_history(
+        self,
+        user_id: UUID,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[UserSnapshotHistoryResponse]:
+        """
+        Retrieves chronological point-in-time role and permission snapshots for a user.
+        """
+        target_user = await self.auth_repo.get_by_id(user_id)
+        if not target_user:
+            logger.warning(f"User {user_id} not found for history query.")
+            raise NotFoundException(
+                message=f"User '{user_id}' not found.",
+                error_code="USER_NOT_FOUND",
+            )
+
+        snapshots = await self.rbac_repo.get_user_rbac_history(
+            user_id=user_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+
+        results: List[UserSnapshotHistoryResponse] = []
+        for s in snapshots:
+            roles = [
+                RoleSimpleSchema(
+                    id=UUID(r["id"]),
+                    name=r["name"],
+                    rank=r.get("rank", get_role_rank(r["name"])),
+                )
+                for r in s.roles_payload
+            ]
+            direct_perms = [
+                PermissionSimpleSchema(id=UUID(p["id"]), code=p["code"])
+                for p in s.direct_permissions_payload
+                if p.get("is_granted", True)
+            ]
+            effective_perms = [
+                PermissionSimpleSchema(id=UUID(p["id"]), code=p["code"])
+                for p in s.effective_permissions_payload
+            ]
+            results.append(
+                UserSnapshotHistoryResponse(
+                    snapshot_id=s.id,
+                    user_id=s.user_id,
+                    username=s.user.username if s.user else target_user.username,
+                    timestamp=s.created_at,
+                    roles=roles,
+                    direct_permissions=direct_perms,
+                    effective_permissions=effective_perms,
+                    total_permissions=len(effective_perms),
+                    updated_by=OperatorSummarySchema(
+                        user_id=s.changed_by.id if s.changed_by else s.changed_by_id,
+                        username=s.changed_by.username if s.changed_by else "SYSTEM",
+                    ),
+                    reason=s.reason,
+                )
+            )
+        return results

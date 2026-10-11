@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -14,15 +15,20 @@ from modules.rbac.rbac_schema import (
     RemoveUserDirectPermissionsPayload,
     ReviewChangeRequestPayload,
     RolePermissionAssignmentResponse,
+    RoleSnapshotHistoryResponse,
     UserDirectPermissionsResponse,
     UserRBACListItemResponse,
     UserRBACSummaryResponse,
     UserRoleAssignmentResponse,
+    UserSnapshotHistoryResponse,
 )
 from modules.rbac.rbac_service import RBACService
 from shares.enums import RoleName
 
-router = APIRouter(prefix="/api/private/admin/rbac", tags=["RBAC Administration"])
+router = APIRouter(
+    prefix="/api/private/admin/rbac", 
+    tags=["RBAC Administration"]
+)
 
 
 @router.get(
@@ -97,6 +103,31 @@ async def get_user_rbac_summary(
 ) -> UserRBACSummaryResponse:
     """Retrieve user identity details, assigned roles, direct overrides, and effective permissions."""
     return await service.get_user_rbac_summary(user_id=user_id)
+
+
+@router.get(
+    "/users/{user_id}/history",
+    summary="Get point-in-time RBAC snapshot history for a user.",
+    status_code=status.HTTP_200_OK,
+    response_model=List[UserSnapshotHistoryResponse],
+    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+)
+async def get_user_rbac_history(
+    user_id: UUID,
+    from_date: Optional[datetime] = Query(None, alias="fromDate", description="Filter history from date"),
+    to_date: Optional[datetime] = Query(None, alias="toDate", description="Filter history to date"),
+    limit: int = Query(50, ge=1, le=100, description="Max snapshots to retrieve"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    service: RBACService = Depends(),
+) -> List[UserSnapshotHistoryResponse]:
+    """Retrieve chronological point-in-time snapshots of user roles, direct permissions, and effective permissions."""
+    return await service.get_user_rbac_history(
+        user_id=user_id,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.put(
@@ -228,6 +259,56 @@ async def reset_role_to_defaults(
     return await service.reset_role_to_defaults(
         operator_id=operator_id,
         role_identifier=role_identifier,
+    )
+
+
+@router.get(
+    "/roles/history",
+    summary="Get point-in-time permission snapshot history across all roles.",
+    status_code=status.HTTP_200_OK,
+    response_model=List[RoleSnapshotHistoryResponse],
+    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+)
+async def get_all_roles_permission_history(
+    role: Optional[str] = Query(None, description="Filter history by role name or UUID"),
+    from_date: Optional[datetime] = Query(None, alias="fromDate", description="Filter history from date"),
+    to_date: Optional[datetime] = Query(None, alias="toDate", description="Filter history to date"),
+    limit: int = Query(50, ge=1, le=100, description="Max snapshots to retrieve"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    service: RBACService = Depends(),
+) -> List[RoleSnapshotHistoryResponse]:
+    """Retrieve chronological point-in-time snapshots of role permissions across all roles with audit details."""
+    return await service.get_all_roles_permission_history(
+        role_identifier=role,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/roles/{role_identifier}/history",
+    summary="Get point-in-time permission snapshot history for a role.",
+    status_code=status.HTTP_200_OK,
+    response_model=List[RoleSnapshotHistoryResponse],
+    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+)
+async def get_role_permission_history(
+    role_identifier: str,
+    from_date: Optional[datetime] = Query(None, alias="fromDate", description="Filter history from date"),
+    to_date: Optional[datetime] = Query(None, alias="toDate", description="Filter history to date"),
+    limit: int = Query(50, ge=1, le=100, description="Max snapshots to retrieve"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    service: RBACService = Depends(),
+) -> List[RoleSnapshotHistoryResponse]:
+    """Retrieve chronological point-in-time snapshots of role permissions with audit details."""
+    return await service.get_role_permission_history(
+        role_identifier=role_identifier,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
     )
 
 

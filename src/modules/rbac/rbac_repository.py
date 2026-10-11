@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 from uuid import UUID
 
@@ -13,7 +14,9 @@ from modules.rbac.rbac_model import (
     RBACChangeRequestStatus,
     Role,
     RolePermission,
+    RolePermissionSnapshot,
     UserPermission,
+    UserRBACSnapshot,
     UserRole,
 )
 from shares.enums import (
@@ -23,6 +26,7 @@ from shares.enums import (
     ActionName,
     RoleName,
     SystemPermission,
+    get_role_rank,
 )
 from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -272,6 +276,19 @@ class RBACRepository(BaseRepository[Role]):
                 message="Error querying enterprise user RBAC details.",
                 error_code="USER_RBAC_LIST_FAILED",
             )
+
+    async def get_user_with_rbac_details(self, user_id: UUID) -> Optional[User]:
+        """Fetches a single user with eagerly loaded roles, role permissions, and direct permissions."""
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.roles).selectinload(Role.permissions),
+                selectinload(User.direct_permissions).selectinload(UserPermission.permission),
+            )
+            .where(User.id == user_id)
+        )
+        res = await self.db.execute(stmt)
+        return res.scalar_one_or_none()
 
 
     async def get_all_roles(self) -> List[Role]:
@@ -563,29 +580,120 @@ class RBACRepository(BaseRepository[Role]):
 
         # 3. Sync Default Role Permissions
         links_added = 0
+        roles_with_added_links: dict[UUID, list[str]] = {}
         for r_enum, perm_set in ROLE_DEFAULT_PERMISSIONS.items():
             role = role_map.get(r_enum.value)
             if not role:
                 continue
             existing_perm_ids = {p.id for p in role.permissions}
             for p_enum in perm_set:
-                perm = perm_map.get(p_enum.value)
+                code_str = p_enum.value if hasattr(p_enum, "value") else str(p_enum)
+                perm = perm_map.get(code_str)
                 if perm and perm.id not in existing_perm_ids:
                     self.db.add(RolePermission(role_id=role.id, permission_id=perm.id))
                     links_added += 1
+                    if role.id not in roles_with_added_links:
+                        roles_with_added_links[role.id] = []
+                    roles_with_added_links[role.id].append(perm.code)
 
         # 4. Lifespan Pruning: Detach obsolete permissions & roles from junction tables
-        # Detach obsolete permissions from role_permissions
+        # Pre-query affected roles holding obsolete permissions
         obsolete_perm_subq = select(Permission.id).where(Permission.code.notin_(valid_perm_codes))
+        roles_with_obsolete_perms_stmt = (
+            select(RolePermission.role_id)
+            .where(RolePermission.permission_id.in_(obsolete_perm_subq))
+            .distinct()
+        )
+        roles_with_obsolete_res = await self.db.execute(roles_with_obsolete_perms_stmt)
+        roles_with_pruned_perm_ids = set(roles_with_obsolete_res.scalars().all())
+
+        # Detach obsolete permissions from role_permissions
         prune_perm_stmt = delete(RolePermission).where(RolePermission.permission_id.in_(obsolete_perm_subq))
         prune_perm_res = await self.db.execute(prune_perm_stmt)
         pruned_perm_links = prune_perm_res.rowcount or 0
 
-        # Detach obsolete roles from user_roles and role_permissions
+        # Pre-query affected users holding obsolete roles
         obsolete_role_subq = select(Role.id).where(Role.name.notin_(valid_role_names))
+        users_with_obsolete_roles_stmt = (
+            select(UserRole.user_id)
+            .where(UserRole.role_id.in_(obsolete_role_subq))
+            .distinct()
+        )
+        users_with_obsolete_res = await self.db.execute(users_with_obsolete_roles_stmt)
+        users_with_pruned_role_ids = set(users_with_obsolete_res.scalars().all())
+
+        # Detach obsolete roles from user_roles and role_permissions
         prune_user_roles_stmt = delete(UserRole).where(UserRole.role_id.in_(obsolete_role_subq))
         prune_user_roles_res = await self.db.execute(prune_user_roles_stmt)
         pruned_user_role_links = prune_user_roles_res.rowcount or 0
+
+        await self.db.flush()
+
+        # 5. Emit System-Originated Snapshots for delta changes
+        # Role snapshots
+        all_affected_role_ids = set(roles_with_added_links.keys()) | roles_with_pruned_perm_ids
+        for r_id in all_affected_role_ids:
+            stmt = (
+                select(Permission.id, Permission.code)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .where(RolePermission.role_id == r_id)
+                .where(Permission.code.in_(valid_perm_codes))
+                .order_by(Permission.code.asc())
+            )
+            r_perms_res = await self.db.execute(stmt)
+            perm_payload = [{"id": str(p[0]), "code": p[1]} for p in r_perms_res.fetchall()]
+
+            reasons = []
+            if r_id in roles_with_added_links:
+                reasons.append(f"linked {len(roles_with_added_links[r_id])} default permission(s)")
+            if r_id in roles_with_pruned_perm_ids:
+                reasons.append("pruned obsolete permission links")
+            reason_str = f"System startup enum synchronization: {', '.join(reasons)}"
+
+            await self.create_role_permission_snapshot(
+                role_id=r_id,
+                permissions_payload=perm_payload,
+                changed_by_id=None,
+                reason=reason_str,
+            )
+
+        # User snapshots for accounts that had obsolete roles detached
+        for u_id in users_with_pruned_role_ids:
+            user_rbac_user = await self.get_user_with_rbac_details(u_id)
+            if user_rbac_user:
+                active_roles = [r for r in user_rbac_user.roles if r.name in valid_role_names]
+                roles_payload = [
+                    {"id": str(r.id), "name": r.name, "rank": get_role_rank(r.name)}
+                    for r in active_roles
+                ]
+                direct_permissions_payload = []
+                effective_map = {}
+                for r in active_roles:
+                    for p in r.permissions:
+                        if p.code in valid_perm_codes:
+                            effective_map[p.code] = {"id": str(p.id), "code": p.code}
+                for up in user_rbac_user.direct_permissions:
+                    p = up.permission
+                    if p and p.code in valid_perm_codes:
+                        direct_permissions_payload.append({
+                            "id": str(p.id),
+                            "code": p.code,
+                            "is_granted": up.is_granted,
+                        })
+                        if up.is_granted:
+                            effective_map[p.code] = {"id": str(p.id), "code": p.code}
+                        else:
+                            effective_map.pop(p.code, None)
+                effective_permissions_payload = sorted(list(effective_map.values()), key=lambda x: x["code"])
+
+                await self.create_user_rbac_snapshot(
+                    user_id=u_id,
+                    roles_payload=roles_payload,
+                    direct_permissions_payload=direct_permissions_payload,
+                    effective_permissions_payload=effective_permissions_payload,
+                    changed_by_id=None,
+                    reason="System startup lifespan pruning: detached obsolete role(s)",
+                )
 
         await self.db.commit()
         logger.info(
@@ -600,3 +708,97 @@ class RBACRepository(BaseRepository[Role]):
             "pruned_perm_links": pruned_perm_links,
             "pruned_user_role_links": pruned_user_role_links,
         }
+
+    async def create_role_permission_snapshot(
+        self,
+        role_id: UUID,
+        permissions_payload: list,
+        changed_by_id: Optional[UUID],
+        reason: str,
+    ) -> RolePermissionSnapshot:
+        """Records an immutable point-in-time snapshot of role permissions."""
+        snapshot = RolePermissionSnapshot(
+            role_id=role_id,
+            permissions_payload=permissions_payload,
+            changed_by_id=changed_by_id,
+            reason=reason,
+        )
+        self.db.add(snapshot)
+        await self.db.flush()
+        return snapshot
+
+    async def create_user_rbac_snapshot(
+        self,
+        user_id: UUID,
+        roles_payload: list,
+        direct_permissions_payload: list,
+        effective_permissions_payload: list,
+        changed_by_id: Optional[UUID],
+        reason: str,
+    ) -> UserRBACSnapshot:
+        """Records an immutable point-in-time snapshot of user roles, direct permissions, and effective permissions."""
+        snapshot = UserRBACSnapshot(
+            user_id=user_id,
+            roles_payload=roles_payload,
+            direct_permissions_payload=direct_permissions_payload,
+            effective_permissions_payload=effective_permissions_payload,
+            changed_by_id=changed_by_id,
+            reason=reason,
+        )
+        self.db.add(snapshot)
+        await self.db.flush()
+        return snapshot
+
+    async def get_role_permission_history(
+        self,
+        role_id: Optional[UUID] = None,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[RolePermissionSnapshot]:
+        """Fetches chronological snapshot history across all roles or for a specific role with date filters."""
+        stmt = (
+            select(RolePermissionSnapshot)
+            .options(
+                selectinload(RolePermissionSnapshot.role),
+                selectinload(RolePermissionSnapshot.changed_by),
+            )
+        )
+        if role_id is not None:
+            stmt = stmt.where(RolePermissionSnapshot.role_id == role_id)
+        if from_date:
+            stmt = stmt.where(RolePermissionSnapshot.created_at >= from_date)
+        if to_date:
+            stmt = stmt.where(RolePermissionSnapshot.created_at <= to_date)
+
+        stmt = stmt.order_by(RolePermissionSnapshot.created_at.desc()).limit(limit).offset(offset)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+
+    async def get_user_rbac_history(
+        self,
+        user_id: UUID,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Sequence[UserRBACSnapshot]:
+        """Fetches chronological snapshot history for a specific user with date filters."""
+        stmt = (
+            select(UserRBACSnapshot)
+            .options(
+                selectinload(UserRBACSnapshot.user),
+                selectinload(UserRBACSnapshot.changed_by),
+            )
+            .where(UserRBACSnapshot.user_id == user_id)
+        )
+        if from_date:
+            stmt = stmt.where(UserRBACSnapshot.created_at >= from_date)
+        if to_date:
+            stmt = stmt.where(UserRBACSnapshot.created_at <= to_date)
+
+        stmt = stmt.order_by(UserRBACSnapshot.created_at.desc()).limit(limit).offset(offset)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+

@@ -207,3 +207,36 @@ class RBACChangeRequestResponse(BaseSchema):
     review_notes: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     created_at: datetime
+
+
+class OperatorSummarySchema(BaseSchema):
+    """Summary of the operator who executed an administrative mutation (None user_id represents SYSTEM)."""
+    user_id: Optional[UUID] = None
+    username: str = "SYSTEM"
+
+
+class RoleSnapshotHistoryResponse(BaseSchema):
+    """Point-in-time snapshot history item for role permissions."""
+    snapshot_id: UUID
+    role_id: UUID
+    role_name: str
+    timestamp: datetime
+    permissions: List[PermissionSimpleSchema]
+    total_permissions: int
+    updated_by: OperatorSummarySchema
+    reason: str
+
+
+class UserSnapshotHistoryResponse(BaseSchema):
+    """Point-in-time snapshot history item for user roles and effective permissions."""
+    snapshot_id: UUID
+    user_id: UUID
+    username: str
+    timestamp: datetime
+    roles: List[RoleSimpleSchema]
+    direct_permissions: List[PermissionSimpleSchema]
+    effective_permissions: List[PermissionSimpleSchema]
+    total_permissions: int
+    updated_by: OperatorSummarySchema
+    reason: str
+
