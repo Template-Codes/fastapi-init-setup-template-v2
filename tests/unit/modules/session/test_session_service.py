@@ -179,17 +179,17 @@ async def test_admin_force_logout_by_session_id_already_inactive():
 
 @pytest.mark.asyncio
 async def test_admin_force_logout_all_sessions_success():
-    """Test admin mass terminating all sessions for a target user."""
-    target_user_id = uuid.uuid4()
-
+    """Test admin emergency mass terminating ALL active sessions enterprise-wide."""
     mock_repo = AsyncMock()
-    mock_repo.deactivate_all_active_by_user_id.return_value = 3
+    mock_repo.deactivate_all_active_sessions.return_value = 5
 
     mock_cache = AsyncMock()
-    mock_cache.smembers.return_value = [b"key1", b"key2"]
+    async def mock_scan_iter(match="*"):
+        for k in ["sessions:1:user:a", "user:sessions:a"]:
+            yield k
+    mock_cache.scan_iter = mock_scan_iter
 
     mock_cache_utils = MagicMock()
-    mock_cache_utils.create_cache_name.return_value = f"user_sessions:{target_user_id}"
 
     service = SessionService(
         user_session_repo=mock_repo,
@@ -197,14 +197,12 @@ async def test_admin_force_logout_all_sessions_success():
         cache_utils=mock_cache_utils,
     )
 
-    res = await service.admin_force_logout_all_sessions(
-        target_user_id=target_user_id,
-    )
+    res = await service.admin_force_logout_all_sessions()
 
     assert res.status is True
-    assert res.revoked_count == 3
-    mock_repo.deactivate_all_active_by_user_id.assert_awaited_once_with(target_user_id)
-    assert mock_cache.delete.await_count >= 2
+    assert res.revoked_count == 5
+    mock_repo.deactivate_all_active_sessions.assert_awaited_once()
+    assert mock_cache.delete.await_count >= 1
 
 
 @pytest.mark.asyncio

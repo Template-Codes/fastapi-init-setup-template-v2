@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # pyrefly: ignore [missing-import]
 from alembic.seeds.base_seeder import BaseSeeder
 from core.settings import settings
-from modules.authentication.auth_model import Permission, Role, RolePermission, User, UserRole, UserStatus
+from modules.authentication.auth_model import User, UserStatus
+from modules.rbac.rbac_model import Permission, Role, RolePermission, UserRole
 from modules.profile.user_profile_model import UserGender, UserProfile
 from modules.session import session_model  # noqa: F401
 from shares.enums import RoleName, SystemPermission

@@ -362,11 +362,11 @@ The session module (`src/modules/session/`) manages individual terminal sessions
 3. **Admin Force Logout by Session UUID**: `DELETE /api/private/admin/sessions/{session_id}`
    - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)`.
    - Immediately revokes a target terminal session. Any subsequent request from that terminal receives an immediate 401 Unauthorized.
-4. **Admin Mass Logout with Sudo Verification**: `POST /api/private/admin/users/{user_id}/sessions/terminate-all`
+4. **Admin Enterprise-Wide Mass Logout with Sudo Verification**: `POST /api/private/admin/sessions/terminate-all`
    - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `verify_sudo_credential`.
    - Requires the executing administrator to supply their own `admin_password` in the JSON request body.
    - Prevents unauthorized mass evictions from unattended administrator workstations.
-   - Bulk invalidates all active sessions in PostgreSQL and purges all related keys from Redis.
+   - Emergency killswitch that bulk invalidates ALL active sessions across all users in PostgreSQL and purges all related keys from Redis.
 
 ---
 

@@ -1,0 +1,483 @@
+# ==============================================================================
+# RBAC ROLE & PERMISSION GOVERNANCE API (BIR CAS ANNEX B ITEM 11.A, 11.H & 214)
+# ==============================================================================
+
+###
+# ------------------------------------------------------------------------------
+# SECTION 1: STANDARD RBAC RETRIEVAL & INSPECTION
+# ------------------------------------------------------------------------------
+
+### (TESTED) - WORKING AS INTENDED
+# 1.1 Get Unified RBAC Configuration (Admin/Super Admin)
+# Returns complete hierarchy (Module -> Resource -> Action) and active database roles with permissions.
+# Guarded by require_role(SUPER_ADMIN, ADMIN).
+# @name getRBACConfiguration
+GET {{host}}/api/private/admin/rbac
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.2 Get User RBAC Summary & Effective Permissions
+# Retrieves user's assigned roles, direct custom overrides, and resolved effective permissions.
+# Guarded by require_role(SUPER_ADMIN, ADMIN).
+# Replace :user_id with the target user's UUID
+# @name getUserRBACSummary
+GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.3 List All Users and Their Roles & Permissions
+# Retrieves enterprise-wide list of users with assigned roles and effective permissions,
+# including database UUIDs for both roles and permissions.
+# Guarded by require_role(SUPER_ADMIN, ADMIN).
+# Query parameters supported: ?role=ADMIN, ?search=user7, ?status=ACTIVE
+# @name listAllUsersRBACSummary
+GET {{host}}/api/private/admin/rbac/users-role-perms
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.4 List Users Filtered by Role & Status
+# Example with optional query parameters: ?role=STAFF_USER&status=PENDING&search=username
+# @name listUsersFilteredRBAC
+GET {{host}}/api/private/admin/rbac/users-role-perms?role=PUBLIC_USER&status=ACTIVE
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.5 View Role Permission Snapshot History
+# Retrieves point-in-time chronological history of permissions assigned to a role.
+# Can filter by fromDate, toDate, limit, and offset.
+# @name getRolePermissionHistory
+GET {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/history?limit=10&offset=0
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.6 View User RBAC Snapshot History
+# Retrieves point-in-time chronological history of roles, direct permissions, and effective permissions.
+# Can filter by fromDate, toDate, limit, and offset.
+# @name getUserRBACHistory
+GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/history?limit=10&offset=0
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.7 View All Roles Permission Snapshot History
+# Retrieves point-in-time chronological history of permissions across all roles (or filtered by role).
+# Can filter by role, fromDate, toDate, limit, and offset.
+# @name getAllRolesPermissionHistory
+GET {{host}}/api/private/admin/rbac/roles/history?limit=20&offset=0
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 1.8 Rollback User RBAC to Selected Snapshot
+# Restores user roles and direct permissions to a historical point-in-time snapshot.
+# Immediately revokes cache and active sessions if demoted.
+# Replace with valid target user_id and snapshotId
+# @name rollbackUserRBAC
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/rollback
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "snapshotId": "01a1298e-a4f8-7320-a697-efa9e8a425b6",
+    "reason": "Rollback user to audited baseline permissions following incident review."
+}
+
+
+
+###
+# ------------------------------------------------------------------------------
+# SECTION 2: IMMEDIATE REVOCATION CHALLENGE (BIR CAS ANNEX B ITEM 11.H)
+# ------------------------------------------------------------------------------
+
+### (TESTED) - WORKING AS INTENDED
+# 2.1 Test Guarded Administrative Access Probe
+# Calling this endpoint tests immediate cache revocation.
+# Before demotion -> 200 OK.
+# After demotion -> 403 Forbidden immediately (0ms delay).
+# @name testGuardedAccessProbe
+GET {{host}}/api/private/admin/rbac/test-guarded-access
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# ------------------------------------------------------------------------------
+# SECTION 3: ROLE & DIRECT PERMISSION MUTATIONS (VALID FLOWS)
+# ------------------------------------------------------------------------------
+
+### (TESTED) - WORKING AS INTENDED
+# 3.1 Additively Assign / Compound Roles for a Target User
+# Merges new roles with user's existing roles and combines their default permissions.
+# Response includes effectivePermissions inherited across all assigned roles.
+# Requires mandatory audit reason.
+# @name assignUserRoles
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "ADMIN"
+    ],
+    "reason": "Promotion to administrative duties; compounding permissions with existing roles."
+}
+
+
+###
+# 3.1b Demote User Roles (Explicit Role Removal & Session Termination)
+# Demotes user by removing specified roles, recalculating effective permissions,
+# flushing Redis permissions cache, and immediately killing all active sessions.
+# @name demoteUserRoles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/demote
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "rolesToRemove": [
+        "ADMIN"
+    ],
+    "reason": "Stepping down administrative responsibilities back to staff level."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.2 Grant Direct Custom Permissions to a User
+# Adds direct grants that bypass role defaults (Effective = Roles + Grants - Denials).
+# @name grantUserDirectPermissions
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "SESSION:SESSION:REJECT"
+    ],
+    "is_granted": true,
+    "reason": "Special project assignment requiring direct profile inspection access."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.3 Explicitly Deny Direct Custom Permissions to a User
+# Adds direct revocation overrides that strip role-inherited permissions immediately.
+# @name denyUserDirectPermissions
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "PROFILE:USER:UPDATE"
+    ],
+    "is_granted": false,
+    "reason": "Temporary suspension of update capabilities pending compliance review."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.4 Remove Direct Permission Overrides from a User
+# Restores user's permissions back to their standard role defaults.
+# @name removeUserDirectPermissions
+DELETE {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "PROFILE:USER:UPDATE"
+    ],
+    "reason": "Compliance review concluded; lifting direct denial override."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.5 Assign / Update Permissions for a Specific Role
+# Replaces permissions for a role and invalidates Redis cache for all affected users.
+# Note: SUPER_ADMIN role permissions are immutable.
+# @name assignRolePermissions
+PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "PROFILE:USER:READ",
+        "PROFILE:USER:UPDATE"
+    ],
+    "reason": "Standardizing staff read/write profile access for Q4 operations."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.6 Batch Update Permissions Across Multiple Roles
+# Atomically updates permissions across multiple roles in a single operation.
+# @name batchAssignRolePermissions
+POST {{host}}/api/private/admin/rbac/roles/batch-assign-permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "assignments": [
+        {
+            "role": "STAFF_USER",
+            "permissions": [
+                "PROFILE:USER:READ",
+                "PROFILE:USER:UPDATE",
+                "SESSION:SESSION:READ"
+            ]
+        },
+        {
+            "role": "PUBLIC_USER",
+            "permissions": [
+                "AUTHENTICATION:USER:READ",
+                "AUTHENTICATION:REGISTRATION:ACCEPT",
+                "AUTHENTICATION:REGISTRATION:REJECT"
+            ]
+        }
+    ],
+    "reason": "Quarterly system-wide role permission realignment."
+}
+
+
+###  (TESTED) - WORKING AS INTENDED
+# 3.8 Rollback Role Permissions to Selected Snapshot
+# Restores role permissions to a historical point-in-time snapshot.
+# Flushes Redis caches for all users currently holding this role.
+# @name rollbackRolePermissions
+POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/rollback
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "snapshotId": "01a1299c-c697-751f-a08f-b2c111cb3693",
+    "reason": "Revert PUBLIC_USER permissions to snapshot after audit review."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 3.7 Reset Role Permissions to Code-Defined Defaults
+# Reverts a system role back to its exact ROLE_DEFAULT_PERMISSIONS preset in enums.py.
+# @name resetRoleToDefaults
+POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/reset-defaults
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# ------------------------------------------------------------------------------
+# SECTION 4: HIERARCHICAL DUAL-AUTHORIZATION CHANGE REQUESTS
+# ------------------------------------------------------------------------------
+
+###  (TESTED) - WORKING AS INTENDED
+# 4.1 List Pending Dual-Control Change Requests
+# Lists all pending elevation requests awaiting higher-rank review.
+# @name listPendingChangeRequests
+GET {{host}}/api/private/admin/rbac/requests
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 4.2 Approve RBAC Change Request
+# Higher-rank authority approves the request (dual control enforces reviewer != requester).
+# Replace :request_id with the change request UUID
+# @name approveChangeRequest
+POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "review_notes": "Verified business justification and authorized role promotion."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# 4.3 Reject RBAC Change Request
+# Higher-rank authority rejects the change request.
+# Replace :request_id with the change request UUID
+# @name rejectChangeRequest
+POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/reject
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "review_notes": "Rejected: Applicant has not completed mandatory prerequisite training."
+}
+
+
+###
+# ==============================================================================
+# SECTION 5: MALICIOUS & TAMPERED INPUTS VALIDATION (REFUSAL TEST SUITE)
+# ==============================================================================
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.1] Tampered Role Name -> Expected: 400 Bad Request (INVALID_ROLE_ID)
+# Client attempts to assign a forged or non-existent role name.
+# @name testTamperedRoleName
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "HACKER_SUPERUSER",
+        "NON_EXISTENT_ROLE"
+    ],
+    "reason": "Attempting unauthorized role injection."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.2] Tampered Permission Code -> Expected: 400 Bad Request (INVALID_PERMISSION_ID)
+# Client attempts to assign an unverified or injected permission code.
+# @name testTamperedPermissionCode
+PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "SYSTEM:ROOT:EXECUTE_COMMANDS",
+        "SQL:INJECTION:DROP_ALL_TABLES"
+    ],
+    "reason": "Attempting malicious permission injection."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.3] Missing Mandatory Audit Reason -> Expected: 422 Unprocessable Entity
+# Request omits the required 'reason' audit trail field.
+# @name testMissingAuditReason
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "STAFF_USER"
+    ]
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.4] Audit Reason Too Short (<5 chars) -> Expected: 422 Unprocessable Entity
+# Request provides a trivially short string failing audit quality constraint.
+# @name testShortAuditReason
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "STAFF_USER"
+    ],
+    "reason": "ok"
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.5] Self-Mutation Privilege Escalation -> Expected: 403 Forbidden (CANNOT_MODIFY_OWN_ROLES)
+# Operator attempts to modify their own roles (must be rejected to prevent self-elevation).
+# Replace target UUID below with the logged-in operator's own user UUID.
+# @name testSelfMutationRefusal
+PUT {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "SUPER_ADMIN"
+    ],
+    "reason": "Operator attempting self-elevation to SUPER_ADMIN."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.6] Role Rank Escalation -> Expected: 403 Forbidden (ROLE_RANK_ESCALATION)
+# An ADMIN (Rank 50) attempts to assign SUPER_ADMIN (Rank 100) to another user.
+# @name testRoleRankEscalationRefusal
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "STAFF_USER", "PUBLIC_USER"
+    ],
+    "reason": "Admin attempting to promote peer to Super Admin without authority."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.7] Target User Rank Boundary Violation -> Expected: 403 Forbidden (INSUFFICIENT_ROLE_RANK)
+# An ADMIN (Rank 50) attempts to modify a SUPER_ADMIN (Rank 100) user.
+# Replace UUID below with a Super Admin user UUID.
+# @name testTargetUserRankViolation
+PUT {{host}}/api/private/admin/rbac/users/01a11ebf-2a8b-7a49-8c26-53d2859e7a78/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "STAFF_USER"
+    ],
+    "reason": "Admin attempting to demote a higher-ranking Super Admin."
+}
+
+
+###  (TESTED) - WORKING AS INTENDED 
+# [REFUSAL 5.8] Lockout Protection: Demoting Last Super Admin -> Expected: 409 Conflict (CANNOT_DEMOTE_LAST_SUPER_ADMIN)
+# Attempting to strip SUPER_ADMIN from the only remaining active Super Admin in the system.
+# @name testLastSuperAdminLockoutProtection
+PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "roles": [
+        "STAFF_USER"
+    ],
+    "reason": "De-escalating the last surviving active Super Admin in the system."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.9] Immutability Violation: Mutating SUPER_ADMIN Role -> Expected: 403 Forbidden (SUPER_ADMIN_IMMUTABLE)
+# Attempting to add, edit, or remove permissions on the immutable SUPER_ADMIN role.
+# @name testSuperAdminRoleImmutability
+PUT {{host}}/api/private/admin/rbac/roles/SUPER_ADMIN/permissions
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "permissions": [
+        "PROFILE:USER:READ"
+    ],
+    "reason": "Attempting to strip core permissions from immutable SUPER_ADMIN role."
+}
+
+
+### (TESTED) - WORKING AS INTENDED
+# [REFUSAL 5.10] Dual-Control Self-Approval -> Expected: 403 Forbidden (CANNOT_SELF_APPROVE)
+# Requester attempts to approve their own pending elevation change request.
+# Replace :request_id with a change request submitted by the caller.
+# @name testDualControlSelfApprovalRefusal
+POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "review_notes": "Attempting self-approval of my own change request."
+}

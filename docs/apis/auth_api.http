@@ -1,18 +1,19 @@
 
-# 1. User Registration (Public Access)
+### (TESTED) - WORKING AS INTENDED
+# 1. User Registration (Public Access) 
 # Submits a new user registration. Status flag is set to PENDING upon success.
 POST {{host}}/api/public/auth/registration
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 {
-    "username": "superadmin",
-    "email": "superadmin@ussci.com",
+    "username": "user7",
+    "email": "user7@ussci.com",
     "plain_password": "Password@123"
 }
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 2. User Authentication / Login (Public Access)
 # Authenticates user credentials. Returns JWT payload and sets HTTP-Only Cookies (access_token & refresh_token).
 # Try with seeded Super Admin credentials: username="superadmin", plain_password="Admin@123456"
@@ -23,12 +24,12 @@ Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 {
-    "username": "admin_user",
+    "username": "new_user_test",
     "plain_password": "Password@123"
 }
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 3. Refresh Access Token (Public Access)
 # Uses the refresh_token stored in HTTP-Only cookie (automatically sent by REST Client cookie jar)
 # or passed explicitly via Cookie header to issue a new access_token.
@@ -38,7 +39,7 @@ X-Header: {{secret_header_value}}
 # Cookie: refresh_token=YOUR_REFRESH_TOKEN_HERE
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 4. Concurrent Login Test (Single Active Session Verification - Option B Exclusive Lock)
 # Execute this while request #2 is still active (within 30 mins idle window).
 # Expected Response: HTTP 409 Conflict
@@ -49,17 +50,17 @@ X-Header: {{secret_header_value}}
 #         "code": "ACTIVE_SESSION_EXISTS"
 #     }
 # }
-POST {{host}}/api/public/auth/auth-tokens
-Content-Type: application/json
-X-Header: {{secret_header_value}}
+# POST {{host}}/api/public/auth/auth-tokens
+# Content-Type: application/json
+# X-Header: {{secret_header_value}}
 
-{
-    "username": "admin_user",
-    "plain_password": "Password@123"
-}
+# {
+#     "username": "admin_user",
+#     "plain_password": "Password@123"
+# }
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 5. List Pending Registrations (Admin Only)
 # Guarded by require_permission(SystemPermission.AUTHENTICATION_USER_READ)
 # Uses active access_token cookie from login (#2)
@@ -68,12 +69,12 @@ Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 6. Approve User Registration (Admin Only)
 # Guarded by require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_ACCEPT)
 # Transitions status from PENDING to ACTIVE and assigns initial role (default: STAFF_USER).
 # Replace :user_id with the pending user's UUID from #5
-POST {{host}}/api/private/admin/users/01a11fcc-e2bc-79e6-903c-2983865dae69/approve
+POST {{host}}/api/private/admin/users/01a128aa-0cd1-71eb-949e-3e3798a2688c/approve
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -82,12 +83,12 @@ X-Header: {{secret_header_value}}
 }
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 7. Reject User Registration (Admin Only)
 # Guarded by require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_REJECT)
 # Transitions status from PENDING to INACTIVE (soft audit retention under BIR rules).
 # Replace :user_id with the pending user's UUID from #5
-POST {{host}}/api/private/admin/users/01a11fcc-e2bc-79e6-903c-2983865dae69/reject
+POST {{host}}/api/private/admin/users/01a12899-c5d6-76e2-831b-90b7aaf59a96/reject
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 

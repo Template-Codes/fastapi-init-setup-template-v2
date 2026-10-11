@@ -25,6 +25,7 @@ from db.cache_session import get_async_cache
 
 # Ensure models are imported for metadata registration
 from modules.authentication import auth_model  # noqa: F401
+from modules.rbac import rbac_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
 from modules.eis import eis_model  # noqa: F401
@@ -46,6 +47,7 @@ async def prepare_test_database():
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS auth"))
+        await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS rbac"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS profile"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS session"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS eis"))

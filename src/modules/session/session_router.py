@@ -74,8 +74,8 @@ async def admin_logout_session_by_id(
 
 
 @router.post(
-    "/api/private/admin/users/{user_id}/sessions/terminate-all",
-    summary="Admin mass termination of all active sessions for a target user (Requires password re-entry).",
+    "/api/private/admin/sessions/terminate-all",
+    summary="Admin emergency mass termination of ALL active sessions enterprise-wide (Requires password re-entry).",
     status_code=status.HTTP_200_OK,
     response_model=SessionLogoutResponse,
     dependencies=[
@@ -83,9 +83,8 @@ async def admin_logout_session_by_id(
         Depends(require_sudo_credential),
     ],
 )
-async def admin_logout_all_sessions_for_user(
-    user_id: UUID,
+async def admin_logout_all_sessions(
     service: SessionService = Depends(),
 ):
-    """Mass-terminates all active sessions for a target user across all terminals with step-up admin verification."""
-    return await service.admin_force_logout_all_sessions(target_user_id=user_id)
+    """Emergency mass-terminates ALL active sessions enterprise-wide across all terminals with step-up admin verification."""
+    return await service.admin_force_logout_all_sessions()

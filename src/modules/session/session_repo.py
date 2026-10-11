@@ -132,6 +132,29 @@ class UserSessionRepository(BaseRepository[UserSession]):
                 error_code="SESSION_UPDATE_FAILED",
             )
 
+    async def deactivate_all_active_sessions(self) -> int:
+        """Deactivate all active unexpired sessions enterprise-wide across all users."""
+        try:
+            stmt = (
+                update(UserSession)
+                .where(
+                    UserSession.is_active.is_(True),
+                    UserSession.expires_at > datetime.now(timezone.utc),
+                )
+                .values(is_active=False)
+                .returning(UserSession.id)
+            )
+            result = await self.db.execute(stmt)
+            await self.db.commit()
+            deactivated_ids = result.scalars().all()
+            return len(deactivated_ids)
+        except Exception as e:
+            logger.error(f"Error deactivating all enterprise sessions: {e}")
+            raise InternalServerException(
+                message="Failed to terminate enterprise sessions",
+                error_code="SESSION_UPDATE_FAILED",
+            )
+
 
     async def get_all_active_sessions_with_user_info(
         self,

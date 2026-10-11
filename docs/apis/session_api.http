@@ -2,7 +2,7 @@
 # SESSION LIFECYCLE & ADMINISTRATIVE OVERRIDES (BIR CAS ANNEX B ITEM 11.B)
 # ==============================================================================
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 1. User Logout (Own Session)
 # Gracefully deactivates current session in PostgreSQL & Redis, clears HTTP-Only cookies.
 # Requires active session cookie (access_token)
@@ -11,7 +11,7 @@ Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 2. Admin List All Active Sessions Across All Users
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
 # Returns enriched session list with user identity (user_id, user_code, username, email, roles, full_name).
@@ -21,29 +21,27 @@ X-Header: {{secret_header_value}}
 
 
 
-###
+### (TESTED) - WORKING AS INTENDED
 # 3. Admin Force Logout Specific Session by UUID
 # Immediately terminates a specific active session, evicting it from Redis & DB.
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
 # Replace :session_id with the target session's UUID
-DELETE {{host}}/api/private/admin/sessions/0192e2b3-7a91-7640-80ea-000000000002
+DELETE {{host}}/api/private/admin/sessions/68ff4755-bb4b-4d72-a37c-3c6165df9289
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
-###
-# 4. Admin Mass Logout All Sessions with Step-Up Sudo Re-Authentication
-# Terminate ALL active sessions for a target user across all devices/terminals.
+### (TESTED) - WORKING AS INTENDED
+# 4. Admin Enterprise-Wide Emergency Mass Logout (Requires Sudo Re-Authentication)
+# Terminate ALL active sessions enterprise-wide across all users and terminals.
 # Requires admin_password in the body to guard against unauthorized mass eviction.
 # Guarded by require_role(SUPER_ADMIN, ADMIN) and verify_sudo_credential.
-# Replace :user_id with the target user's UUID
-POST {{host}}/api/private/admin/users/0192e2b3-7a91-7640-80ea-000000000001/sessions/terminate-all
+# @name adminMassLogoutAllSessions
+POST {{host}}/api/private/admin/sessions/terminate-all
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 {
-    "admin_username": "superadmin",
-    "admin_password": "Admin@123456"
+    "admin_username": "new_user_test",
+    "admin_password": "Password@123"
 }
-
-

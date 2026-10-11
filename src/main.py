@@ -12,7 +12,8 @@ if "src" not in sys.path:
 
 from core.settings import settings
 from core.logging import setup_logging
-from clients.postgresql import init_db, close_db
+from clients.postgresql import init_db, close_db, postgres_client_async_session
+from modules.rbac.rbac_repository import RBACRepository
 
 # import models
 from modules.authentication import auth_model
@@ -24,6 +25,7 @@ from modules.eis import eis_model
 from modules.authentication.auth_router import router as auth_router
 from modules.eis.eis_router import router as eis_router
 from modules.session.session_router import router as session_router
+from modules.rbac.rbac_router import router as rbac_router
 
 from exceptions.exception_handlers import register_exception_handlers
 from core.logging_middleware import LoggingMiddleware
@@ -42,8 +44,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         logger.info("Initializing database...")
         await init_db()
+
+        # Idempotently sync RBAC roles and permissions from code enums
+        logger.info("Synchronizing RBAC enums and default presets to database...")
+        async with postgres_client_async_session() as session:
+            rbac_repo = RBACRepository(db=session)
+            sync_result = await rbac_repo.sync_enums_to_db()
+            logger.info(f"RBAC enum sync on startup completed: {sync_result}")
     except Exception as e:
-        logger.error(f"Database connection failed on startup: {e}")
+        logger.error(f"Database connection or RBAC enum sync failed on startup: {e}")
+
     
     # Initialize Redis singleton connection pool
     try:
@@ -94,6 +104,7 @@ register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(session_router)
 app.include_router(eis_router)
+app.include_router(rbac_router)
 
 @app.get("/health", tags=["System"])
 async def health_check():

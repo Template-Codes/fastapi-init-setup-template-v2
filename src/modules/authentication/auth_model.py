@@ -4,18 +4,23 @@ from typing import TYPE_CHECKING, List, Optional
 import uuid
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     Enum,
-    ForeignKey,
-    Sequence,
     String,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base, TimestampMixin, uuid_pk
+from modules.rbac.rbac_model import (
+    Permission,
+    RBACChangeRequest,
+    RBACChangeRequestStatus,
+    Role,
+    RolePermission,
+    UserPermission,
+    UserRole,
+)
 
 if TYPE_CHECKING:
     from modules.profile.user_profile_model import UserProfile
@@ -30,96 +35,6 @@ class UserStatus(str, PyEnum):
     SUSPENDED = "SUSPENDED"  # Suspended due to security or administrative reasons
 
 
-class Permission(Base, TimestampMixin):
-    """Granular permission code definition (e.g. accounting:journal:post)."""
-
-    __tablename__ = "permissions"
-    __table_args__ = {"schema": "auth"}
-
-    id: Mapped[uuid_pk]
-    code: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    module: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
-    # Many-to-Many: Permission <-> Role (via auth.role_permissions junction table)
-    roles: Mapped[List["Role"]] = relationship(
-        "Role",
-        secondary="auth.role_permissions",
-        back_populates="permissions",
-    )
-
-
-class RolePermission(Base, TimestampMixin):
-    """Junction table mapping Roles to Permissions (Many-to-Many)."""
-
-    __tablename__ = "role_permissions"
-    __table_args__ = {"schema": "auth"}
-
-    role_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.roles.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    permission_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.permissions.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-
-
-class Role(Base, TimestampMixin):
-    """User role holding a batch of permissions."""
-
-    __tablename__ = "roles"
-    __table_args__ = {"schema": "auth"}
-
-    id: Mapped[uuid_pk]
-    name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    is_system_role: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    # Many-to-Many: Role <-> Permission (via auth.role_permissions junction table)
-    permissions: Mapped[List[Permission]] = relationship(
-        "Permission",
-        secondary="auth.role_permissions",
-        back_populates="roles",
-        lazy="selectin",
-    )
-    # Many-to-Many: Role <-> User (via auth.user_roles junction table)
-    users: Mapped[List["User"]] = relationship(
-        "User",
-        secondary="auth.user_roles",
-        back_populates="roles",
-    )
-
-
-class UserRole(Base, TimestampMixin):
-    """Junction table mapping Users to Roles (Many-to-Many)."""
-
-    __tablename__ = "user_roles"
-    __table_args__ = {"schema": "auth"}
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.users.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    role_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.roles.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-
-user_code_seq = Sequence("user_code_seq", schema="auth", metadata=Base.metadata)
-
-
 class User(Base, TimestampMixin):
     """Core identity and authentication record."""
 
@@ -129,7 +44,6 @@ class User(Base, TimestampMixin):
     id: Mapped[uuid_pk]
     user_code: Mapped[str] = mapped_column(
         String(20),
-        user_code_seq,
         unique=True,
         index=True,
         nullable=False,
@@ -151,10 +65,10 @@ class User(Base, TimestampMixin):
         default=None,
     )
 
-    # Many-to-Many: User <-> Role (via auth.user_roles junction table)
+    # Many-to-Many: User <-> Role (via rbac.user_roles junction table)
     roles: Mapped[List[Role]] = relationship(
         "Role",
-        secondary="auth.user_roles",
+        secondary="rbac.user_roles",
         back_populates="users",
         lazy="selectin",
     )
@@ -171,3 +85,23 @@ class User(Base, TimestampMixin):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    # One-to-Many: User (1) -> UserPermission (N)
+    direct_permissions: Mapped[List[UserPermission]] = relationship(
+        "UserPermission",
+        foreign_keys="[UserPermission.user_id]",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+__all__ = [
+    "UserStatus",
+    "User",
+    "Permission",
+    "Role",
+    "RolePermission",
+    "UserRole",
+    "UserPermission",
+    "RBACChangeRequest",
+    "RBACChangeRequestStatus",
+]

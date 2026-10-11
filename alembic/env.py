@@ -16,6 +16,7 @@ from db.base import Base
 
 # Import all module models so Base.metadata is fully populated for autogenerate
 from modules.authentication import auth_model  # noqa: F401
+from modules.rbac import rbac_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
 from modules.eis import eis_model  # noqa: F401

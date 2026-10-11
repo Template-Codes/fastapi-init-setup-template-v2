@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from base.repository import BaseRepository
-from modules.authentication.auth_model import Role, User, UserRole, UserStatus
+from modules.authentication.auth_model import User, UserStatus
+from modules.rbac.rbac_model import Role, UserRole
 from exceptions.app_exception import InternalServerException
 
 

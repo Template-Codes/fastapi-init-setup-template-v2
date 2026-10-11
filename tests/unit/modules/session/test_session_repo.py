@@ -100,3 +100,20 @@ async def test_deactivate_session_by_id_success():
     mock_db.execute.assert_awaited_once()
     mock_db.commit.assert_awaited_once()
     assert result == mock_session
+
+
+@pytest.mark.asyncio
+async def test_deactivate_all_active_sessions():
+    """Test deactivate_all_active_sessions deactivates all active sessions."""
+    from uuid import uuid4
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [uuid4(), uuid4()]
+    mock_db.execute.return_value = mock_result
+
+    repo = UserSessionRepository(db=mock_db)
+    count = await repo.deactivate_all_active_sessions()
+
+    mock_db.execute.assert_awaited_once()
+    mock_db.commit.assert_awaited_once()
+    assert count == 2

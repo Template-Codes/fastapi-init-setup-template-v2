@@ -94,33 +94,30 @@ class SessionService:
 
     async def admin_force_logout_all_sessions(
         self,
-        target_user_id: UUID,
     ) -> SessionLogoutResponse:
         """
-        Administrator mass termination of all active sessions for a target user.
+        Administrator emergency mass termination of ALL active sessions enterprise-wide across all users.
         Step-up administrative credential verification is guarded at the route level via require_sudo_credential.
         """
-        logger.info(f"Executing mass session revocation for user {target_user_id}")
-        # 1. Bulk deactivate in PostgreSQL
-        revoked_count = await self.user_session_repo.deactivate_all_active_by_user_id(
-            target_user_id
-        )
+        logger.info("Executing enterprise-wide mass session revocation across all users")
+        # 1. Bulk deactivate all active unexpired sessions in PostgreSQL
+        revoked_count = await self.user_session_repo.deactivate_all_active_sessions()
 
-        # 2. Purge all Redis session keys for user
-        cache_name = self.cache_utils.create_cache_name(user_id=str(target_user_id))
+        # 2. Purge all Redis session keys and user session sets
         try:
-            active_keys = await self.async_cache.smembers(cache_name)
-            if active_keys:
-                for key in active_keys:
-                    key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
-                    await self.async_cache.delete(key_str)
-            await self.async_cache.delete(cache_name)
+            keys_to_delete = []
+            async for key in self.async_cache.scan_iter(match="sessions:*"):
+                keys_to_delete.append(key)
+            async for key in self.async_cache.scan_iter(match="user:sessions:*"):
+                keys_to_delete.append(key)
+            if keys_to_delete:
+                await self.async_cache.delete(*keys_to_delete)
         except Exception as e:
-            logger.warning(f"Error purging all sessions from Redis for user {target_user_id}: {e}")
+            logger.warning(f"Error purging enterprise session keys from Redis: {e}")
 
         return SessionLogoutResponse(
             status=True,
-            description=f"All active sessions for user {target_user_id} terminated ({revoked_count} sessions revoked).",
+            description=f"All active sessions have been forcefully revoked ({revoked_count} sessions terminated).",
             revoked_count=revoked_count,
         )
 
