@@ -55,6 +55,7 @@ class ModuleName(str, Enum):
     SESSION = "SESSION"
     RBAC = "RBAC"
     SYSTEM = "SYSTEM"
+    AUDIT_TRAIL = "AUDIT_TRAIL"
 
 
 MODULE_DESCRIPTIONS: dict[ModuleName, str] = {
@@ -63,6 +64,7 @@ MODULE_DESCRIPTIONS: dict[ModuleName, str] = {
     ModuleName.SESSION: "Active login sessions, terminals, device tracking, and session revocation.",
     ModuleName.RBAC: "Role-Based Access Control hierarchy, permission catalog, and security assignments.",
     ModuleName.SYSTEM: "Core system health, operational parameters, and configuration services.",
+    ModuleName.AUDIT_TRAIL: "Statutory BIR CAS audit logging, tamper-evident hash chaining, and forensic trail inspection.",
 }
 
 
@@ -80,6 +82,9 @@ class ResourceName(str, Enum):
     ROLE_PERMISSION = "ROLE_PERMISSION"
     DIRECT_PERMISSION = "DIRECT_PERMISSION"
     CHANGE_REQUEST = "CHANGE_REQUEST"
+    AUDIT_LOG = "AUDIT_LOG"
+    EXPORT_JOB = "EXPORT_JOB"
+    INTEGRITY_CHECK = "INTEGRITY_CHECK"
 
 
 # Detailed descriptions for client UI and administrative metadata
@@ -93,6 +98,9 @@ RESOURCE_DESCRIPTIONS: dict[ResourceName, str] = {
     ResourceName.ROLE_PERMISSION: "Assignment mapping granting specific permissions to security roles.",
     ResourceName.DIRECT_PERMISSION: "Direct custom user permission grants and explicit denials outside role defaults.",
     ResourceName.CHANGE_REQUEST: "Dual-authorization RBAC change requests requiring multi-tier hierarchical approval.",
+    ResourceName.AUDIT_LOG: "Statutory transaction and operational audit log stream.",
+    ResourceName.EXPORT_JOB: "Asynchronous and on-demand statutory audit log export tasks.",
+    ResourceName.INTEGRITY_CHECK: "Cryptographic hash chain verification and tamper detection checkpoints.",
 }
 
 
@@ -121,6 +129,16 @@ class ActionName(str, Enum):
     TRANSMIT = "TRANSMIT"      # Auto-transmit e-invoice payload to BIR EIS API (RMC 98-2026)
     GENERATE = "GENERATE"      # Generate official Books of Accounts / BIR tax certificates (Annex B Item 10.d, RR 9-2009)
 
+    # Authentication & Security Lifecycle (Annex B Items 207, 209, 211)
+    LOGIN = "LOGIN"                    # Successful user authentication
+    FAILED_LOGIN = "FAILED_LOGIN"      # Unsuccessful authentication attempt
+    LOGOUT = "LOGOUT"                  # Graceful session termination
+    LOCKOUT = "LOCKOUT"                # Account deactivation/ban due to excessive failed attempts (Annex B Line 209)
+    PASSWORD_CHANGE = "PASSWORD_CHANGE"# Password update or periodic expiration reset (Annex B Line 211)
+    FORCED_LOGOUT = "FORCED_LOGOUT"    # Administrative session termination (Annex B Line 207)
+    EXPORT = "EXPORT"                  # Export official Books of Accounts / audit data (Annex B Line 171)
+    ACCESS_DENIED = "ACCESS_DENIED"    # Security event: Attempted access to unauthorized resource
+
 
 # Detailed descriptions for actions including BIR statutory references
 ACTION_DESCRIPTIONS: dict[ActionName, str] = {
@@ -139,6 +157,14 @@ ACTION_DESCRIPTIONS: dict[ActionName, str] = {
     ActionName.REPRINT: "BIR CAS: Reprint receipt/invoice with mandatory REPRINT watermark (Annex B Line 71)",
     ActionName.TRANSMIT: "BIR EIS: Transmit e-invoice JSON payload to BIR EIS API (RMC 98-2026)",
     ActionName.GENERATE: "BIR CAS: Generate official books of accounts or tax certificates (RR 9-2009)",
+    ActionName.LOGIN: "Successful user sign-on and terminal session issuance",
+    ActionName.FAILED_LOGIN: "Failed sign-on attempt with invalid credentials",
+    ActionName.LOGOUT: "Explicit user sign-out and session invalidation",
+    ActionName.LOCKOUT: "BIR CAS: Account lockout following repeated failed sign-ons (Annex B Line 209)",
+    ActionName.PASSWORD_CHANGE: "BIR CAS: User credential modification or 30-day policy rotation (Annex B Line 211)",
+    ActionName.FORCED_LOGOUT: "BIR CAS: Invalidation of concurrent or administrative terminal sessions (Annex B Line 207)",
+    ActionName.EXPORT: "BIR CAS: Generate and download official audit or financial export file (Annex B Line 171)",
+    ActionName.ACCESS_DENIED: "Security event: Attempted access to an unauthorized endpoint or resource",
 }
 
 
@@ -176,6 +202,20 @@ class SystemPermission(str, Enum):
     SESSION_SESSION_READ = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.READ.value}"
     SESSION_SESSION_REVOKE = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.REVOKE.value}"
 
+    # Audit Trail Module (BIR CAS Annex B)
+    AUDIT_TRAIL_AUDIT_LOG_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.READ.value}"
+    AUDIT_TRAIL_AUDIT_LOG_EXPORT = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.EXPORT.value}"
+    AUDIT_TRAIL_INTEGRITY_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.INTEGRITY_CHECK.value}:{ActionName.READ.value}"
+
+
+class AuditSeverity(str, Enum):
+    """Statutory and operational log severity levels."""
+    INFO = "INFO"
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
 
 # Bulk Default Permissions per Role (Source of Truth for initial/bulk access)
 ROLE_DEFAULT_PERMISSIONS: dict[RoleName, set[SystemPermission]] = {
@@ -198,6 +238,9 @@ ROLE_DEFAULT_PERMISSIONS: dict[RoleName, set[SystemPermission]] = {
         SystemPermission.PROFILE_USER_UPDATE,
         SystemPermission.SESSION_SESSION_READ,
         SystemPermission.SESSION_SESSION_REVOKE,
+        SystemPermission.AUDIT_TRAIL_AUDIT_LOG_READ,
+        SystemPermission.AUDIT_TRAIL_AUDIT_LOG_EXPORT,
+        SystemPermission.AUDIT_TRAIL_INTEGRITY_READ,
     },
     RoleName.SUPER_ADMIN: set(SystemPermission),
     RoleName.PUBLIC_USER: set(),

@@ -20,6 +20,7 @@ from modules.rbac import rbac_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
 from modules.eis import eis_model  # noqa: F401
+from modules.audit_trail import audit_trail_model  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

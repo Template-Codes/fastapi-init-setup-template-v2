@@ -20,6 +20,7 @@ from modules.authentication import auth_model
 from modules.profile import user_profile_model
 from modules.session import session_model
 from modules.eis import eis_model
+from modules.audit_trail import audit_trail_model
 
 # import routers with alias
 from modules.authentication.auth_router import router as auth_router
