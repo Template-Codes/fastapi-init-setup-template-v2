@@ -103,8 +103,27 @@ async def test_get_current_user_id_invalid_jwt_signature():
 
 
 @pytest.mark.asyncio
-async def test_require_user_profile_cache_hit_completed():
+async def test_require_user_profile_non_prod_skipped():
+    """Test require_user_profile_and_get_id skips check when ENVIRONMENT is not 'prod'."""
+    user_id = uuid.uuid4()
+    mock_repo = AsyncMock()
+    mock_cache_utils = MagicMock()
+
+    result = await require_user_profile_and_get_id(
+        user_id=user_id,
+        user_profile_repo=mock_repo,
+        cache_utils=mock_cache_utils
+    )
+
+    assert result == user_id
+    mock_repo.get_by_id.assert_not_called()
+    mock_cache_utils.get_profile_completion_key.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_require_user_profile_cache_hit_completed(monkeypatch):
     """Test require_user_profile_and_get_id on Redis cache hit with completed profile."""
+    monkeypatch.setattr(settings, "ENVIRONMENT", "prod")
     user_id = uuid.uuid4()
     mock_repo = AsyncMock()
     mock_cache_utils = MagicMock()
@@ -123,8 +142,9 @@ async def test_require_user_profile_cache_hit_completed():
 
 
 @pytest.mark.asyncio
-async def test_require_user_profile_cache_miss_db_fallback_success():
+async def test_require_user_profile_cache_miss_db_fallback_success(monkeypatch):
     """Test require_user_profile_and_get_id on Redis cache miss with DB check success."""
+    monkeypatch.setattr(settings, "ENVIRONMENT", "prod")
     user_id = uuid.uuid4()
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = MagicMock(user_id=user_id)
@@ -150,8 +170,9 @@ async def test_require_user_profile_cache_miss_db_fallback_success():
 
 
 @pytest.mark.asyncio
-async def test_require_user_profile_incomplete_raises_forbidden():
+async def test_require_user_profile_incomplete_raises_forbidden(monkeypatch):
     """Test that an incomplete profile raises 403 ForbiddenException PROFILE_SETUP_REQUIRED."""
+    monkeypatch.setattr(settings, "ENVIRONMENT", "prod")
     user_id = uuid.uuid4()
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = None

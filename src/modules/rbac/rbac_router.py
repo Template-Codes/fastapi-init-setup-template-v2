@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
+from dependencies.current_user import require_user_profile_and_get_id
 from dependencies.rbac_guard import require_role
 from fastapi import APIRouter, Depends, Query, status
 from modules.rbac.rbac_schema import (
@@ -33,7 +34,8 @@ from shares.enums import RoleName
 
 router = APIRouter(
     prefix="/api/private/admin/rbac", 
-    tags=["RBAC Administration"]
+    tags=["RBAC Administration"],
+    dependencies=[Depends(require_user_profile_and_get_id)],
 )
 
 

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     EIS_POLL_INTERVAL_S: int = 30
 
     # Initial Super Admin Seed Settings
-    SEED_SUPERADMIN_USERNAME: str = "superadmin"
+    SEED_SUPERADMIN_USERNAME: str = "superadmin1"
     SEED_SUPERADMIN_EMAIL: str = "admin@system.local"
     SEED_SUPERADMIN_PASSWORD: str = "Admin@123456"
     
