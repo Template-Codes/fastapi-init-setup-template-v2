@@ -376,27 +376,22 @@ async def test_refresh_authentication_tokens_revoked_in_redis_raises_unauthorize
 
 
 @pytest.mark.asyncio
-async def test_authenticate_user_concurrent_session_blocked():
-    """Test that active session within idle limit blocks 2nd concurrent login with 409 Conflict."""
+async def test_authenticate_user_multi_session_allowed():
+    """Test that existing active session does NOT block concurrent login (multi-session support)."""
     mock_auth_repo = AsyncMock()
     user = MagicMock(spec=User)
     user.id = uuid.uuid4()
     user.user_code = "USR-00001"
-    user.username = "concurrent_user"
-    user.email = "concurrent@example.com"
+    user.username = "multi_session_user"
+    user.email = "multi@example.com"
     user.status = UserStatus.ACTIVE
     user.banned_until_time = None
     user.password_hash = AuthenticationService.pwd_context.hash("Password123!")
     mock_auth_repo.get_user_by_username.return_value = user
 
-    active_session = MagicMock()
-    active_session.id = uuid.uuid4()
-    # Recently active (well within idle window)
-    active_session.last_active_at = datetime.now(timezone.utc) - timedelta(seconds=min(settings.SESSION_IDLE_TIMEOUT_SEC // 2, 10))
-    active_session.is_active = True
-
     mock_session_repo = AsyncMock()
-    mock_session_repo.get_active_session_by_user_id.return_value = active_session
+    new_session_mock = MagicMock(id=uuid.uuid4())
+    mock_session_repo.create.return_value = new_session_mock
 
     mock_cache_utils = AsyncMock()
     mock_cache_utils.is_ip_user_blocked.return_value = False
@@ -409,61 +404,12 @@ async def test_authenticate_user_concurrent_session_blocked():
         cache_utils=mock_cache_utils
     )
 
-    cred = UserAuthenticationRequest(username="concurrent_user", plain_password="Password123!")
-    with pytest.raises(ConflictException) as exc_info:
-        await service.authenticate_user(cred)
-
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.error_code == "ACTIVE_SESSION_EXISTS"
-    assert "An active session is currently in progress" in exc_info.value.message
-    # Session must NOT be deactivated
-    mock_session_repo.deactivate_session_by_id.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_authenticate_user_idle_session_retired_and_allows_login():
-    """Test that an abandoned session (>30 mins idle) is auto-retired and new login succeeds."""
-    mock_auth_repo = AsyncMock()
-    user = MagicMock(spec=User)
-    user.id = uuid.uuid4()
-    user.user_code = "USR-00001"
-    user.username = "idle_user"
-    user.email = "idle@example.com"
-    user.status = UserStatus.ACTIVE
-    user.banned_until_time = None
-    user.password_hash = AuthenticationService.pwd_context.hash("Password123!")
-    mock_auth_repo.get_user_by_username.return_value = user
-
-    stale_session = MagicMock()
-    stale_session.id = uuid.uuid4()
-    # Idle for 45 minutes (exceeds 30 min idle threshold)
-    stale_session.last_active_at = datetime.now(timezone.utc) - timedelta(minutes=45)
-    stale_session.is_active = True
-
-    mock_session_repo = AsyncMock()
-    mock_session_repo.get_active_session_by_user_id.return_value = stale_session
-    new_session_mock = MagicMock(id=uuid.uuid4())
-    mock_session_repo.create.return_value = new_session_mock
-
-    mock_cache_utils = AsyncMock()
-    mock_cache_utils.is_ip_user_blocked.return_value = False
-
-    mock_cache = AsyncMock()
-
-    service = AuthenticationService(
-        auth_repo=mock_auth_repo,
-        user_profile_repo=AsyncMock(get_by_id=AsyncMock(return_value=None)),
-        user_session_repo=mock_session_repo,
-        async_cache=mock_cache,
-        cache_utils=mock_cache_utils
-    )
-
-    cred = UserAuthenticationRequest(username="idle_user", plain_password="Password123!")
+    cred = UserAuthenticationRequest(username="multi_session_user", plain_password="Password123!")
     response = await service.authenticate_user(cred)
 
     assert response is not None
-    # Stale session must be deactivated
-    mock_session_repo.deactivate_session_by_id.assert_awaited_once_with(stale_session.id)
+    assert response.status == "ACTIVE"
+    mock_session_repo.create.assert_awaited_once()
 
 
 @pytest.mark.asyncio

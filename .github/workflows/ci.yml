@@ -80,23 +80,6 @@ jobs:
       REFRESH_JWT_EXPIRY_SEC: "604800"
       JWT_ALGORITHM: HS256
 
-      # ==========================================
-      # BIR EIS (ELECTRONIC INVOICING SYSTEM) CONFIG
-      # ==========================================
-      EIS_ENDPOINT_BASE_URL: https://eis-cert.bir.gov.ph
-      EIS_API_VERSION: v2
-      EIS_USER_ID: your_user_id
-      EIS_PASSWORD: your_password
-      EIS_ACCREDITATION_ID: your_accreditation_id
-      EIS_APPLICATION_ID: your_application_id
-      EIS_APPLICATION_SECRET_KEY: your_hmac_secret_key
-      EIS_APPLICATION_KEY_ID: your_key_id
-      EIS_PUBLIC_KEY: your_base64_encoded_bir_public_key
-      EIS_PRIVATE_KEY: your_base64_encoded_private_key
-      EIS_PTU_NUM: your_ptu_number
-      EIS_MAX_POLL_RETRIES: 10
-      EIS_POLL_INTERVAL_S: 30
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

@@ -38,23 +38,6 @@ class Settings(BaseSettings):
     COOKIE_SECURE: bool = False # not set in .env
     COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax" # not set in .env
 
-    # BIR EIS Configuration
-    EIS_ENDPOINT_BASE_URL: str | None = None
-    EIS_API_VERSION: str = "v2"
-    EIS_USER_ID: str | None = None
-    EIS_PASSWORD: str | None = None
-    EIS_ACCREDITATION_ID: str | None = None
-    EIS_APPLICATION_ID: str | None = None
-    EIS_APPLICATION_SECRET_KEY: str | None = None
-    EIS_APPLICATION_KEY_ID: str | None = None
-    EIS_PUBLIC_KEY: str | None = None
-    EIS_PRIVATE_KEY: str | None = None
-    EIS_PTU_NUM: str | None = None
-
-    # EIS Polling Configuration
-    EIS_MAX_POLL_RETRIES: int = 10
-    EIS_POLL_INTERVAL_S: int = 30
-
     # Initial Super Admin Seed Settings
     SEED_SUPERADMIN_USERNAME: str = "superadmin1"
     SEED_SUPERADMIN_EMAIL: str = "admin@system.local"

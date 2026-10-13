@@ -64,7 +64,7 @@ MODULE_DESCRIPTIONS: dict[ModuleName, str] = {
     ModuleName.SESSION: "Active login sessions, terminals, device tracking, and session revocation.",
     ModuleName.RBAC: "Role-Based Access Control hierarchy, permission catalog, and security assignments.",
     ModuleName.SYSTEM: "Core system health, operational parameters, and configuration services.",
-    ModuleName.AUDIT_TRAIL: "Statutory BIR CAS audit logging, tamper-evident hash chaining, and forensic trail inspection.",
+    ModuleName.AUDIT_TRAIL: "System activity logging, event tracking, and operational audit inspection.",
 }
 
 
@@ -98,20 +98,19 @@ RESOURCE_DESCRIPTIONS: dict[ResourceName, str] = {
     ResourceName.ROLE_PERMISSION: "Assignment mapping granting specific permissions to security roles.",
     ResourceName.DIRECT_PERMISSION: "Direct custom user permission grants and explicit denials outside role defaults.",
     ResourceName.CHANGE_REQUEST: "Dual-authorization RBAC change requests requiring multi-tier hierarchical approval.",
-    ResourceName.AUDIT_LOG: "Statutory transaction and operational audit log stream.",
-    ResourceName.EXPORT_JOB: "Asynchronous and on-demand statutory audit log export tasks.",
-    ResourceName.INTEGRITY_CHECK: "Cryptographic hash chain verification and tamper detection checkpoints.",
+    ResourceName.AUDIT_LOG: "Enterprise transaction and operational activity log stream.",
+    ResourceName.EXPORT_JOB: "Asynchronous and on-demand audit log export tasks.",
+    ResourceName.INTEGRITY_CHECK: "Log integrity verification and tamper detection checkpoints.",
 }
 
 
 class ActionName(str, Enum):
     """
     Actions performable on resources.
-    Incorporates standard CRUD operations alongside BIR CAS statutory action terminologies
-    (BIR Annex B Items 10.b, 10.c, 71; RMC No. 98-2026).
+    Standard CRUD operations alongside administrative lifecycle operations.
     """
     # Standard CRUD & Administrative Lifecycle
-    CREATE = "CREATE"          # Create draft or unposted records
+    CREATE = "CREATE"          # Create draft or active records
     READ = "READ"              # Retrieve, inspect, or search records
     UPDATE = "UPDATE"          # Modify unposted/draft records before final posting
     DELETE = "DELETE"          # Purge draft/unposted records

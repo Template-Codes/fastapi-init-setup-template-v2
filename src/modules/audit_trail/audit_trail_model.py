@@ -66,12 +66,7 @@ class AuditLog(Base):
             "ix_audit_logs_reversal_for_id",
             "reversal_for_id",
         ),
-        # Check constraint: mandatory justification reason for sensitive operations
-        CheckConstraint(
-            "action NOT IN ('VOID', 'ADJUSTMENT', 'ROLE_CHANGE', 'PERMISSION_CHANGE', 'SECURITY_LOCKOUT', 'FORCED_LOGOUT') "
-            "OR (reason IS NOT NULL AND length(trim(reason)) >= 5)",
-            name="ck_audit_logs_mandatory_reason",
-        ),
+
         # Check constraint: payload size guard against denial-of-service / JSON bombs
         CheckConstraint(
             "octet_length(context::text) <= 65536 AND "
@@ -154,10 +149,10 @@ class AuditLog(Base):
         nullable=True,
     )
 
-    # Cryptographic tamper-evident hash chaining
-    record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    chain_id: Mapped[str] = mapped_column(String(100), index=True, default="GLOBAL", nullable=False)
+    # Optional hash chaining for enterprise integrity
+    record_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    prev_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    chain_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
 
     # Relationships
     user: Mapped[Optional["User"]] = relationship(
@@ -211,37 +206,7 @@ class AuditExportJob(Base):
     )
 
 
-class AuditHashCheckpoint(Base):
-    """
-    Cryptographic verification checkpoint summarizing audit sequence ranges.
-    Used by scheduled integrity verification workers to validate and anchor chains.
-    """
-
-    __tablename__ = "audit_hash_checkpoints"
-    __table_args__ = {"schema": "audit_trail"}
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=generate_uuid,
-    )
-    checkpoint_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
-    checkpoint_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        server_default=text("now()"),
-        nullable=False,
-    )
-    from_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    to_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    root_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="VALID", nullable=False)
-    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    verification_details: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-
-
 __all__ = [
     "AuditLog",
     "AuditExportJob",
-    "AuditHashCheckpoint",
 ]

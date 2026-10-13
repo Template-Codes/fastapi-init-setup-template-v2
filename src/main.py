@@ -19,12 +19,10 @@ from modules.rbac.rbac_repository import RBACRepository
 from modules.authentication import auth_model
 from modules.profile import user_profile_model
 from modules.session import session_model
-from modules.eis import eis_model
 from modules.audit_trail import audit_trail_model
 
 # import routers with alias
 from modules.authentication.auth_router import router as auth_router
-from modules.eis.eis_router import router as eis_router
 from modules.session.session_router import router as session_router
 from modules.rbac.rbac_router import router as rbac_router
 
@@ -104,7 +102,6 @@ register_exception_handlers(app)
 # router registration
 app.include_router(auth_router)
 app.include_router(session_router)
-app.include_router(eis_router)
 app.include_router(rbac_router)
 
 @app.get("/health", tags=["System"])

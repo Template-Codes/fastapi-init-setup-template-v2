@@ -28,7 +28,6 @@ from modules.authentication import auth_model  # noqa: F401
 from modules.rbac import rbac_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
-from modules.eis import eis_model  # noqa: F401
 from modules.audit_trail import audit_trail_model  # noqa: F401
 
 # Derive test database URL using TEST_DATABASE_URL
@@ -51,7 +50,6 @@ async def prepare_test_database():
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS rbac"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS profile"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS session"))
-        await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS eis"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS audit_trail"))
         await conn.execute(sa.text("CREATE SEQUENCE IF NOT EXISTS auth.user_code_seq START WITH 1 INCREMENT BY 1"))
         await conn.execute(sa.text("CREATE SEQUENCE IF NOT EXISTS audit_trail.audit_seq START WITH 1 INCREMENT BY 1"))
