@@ -60,7 +60,7 @@ async def test_guarded_access(
 
 
 @router.get(
-    "",
+    "/configuration",
     summary="Get unified RBAC hierarchy and active system roles with permissions.",
     status_code=status.HTTP_200_OK,
     response_model=RBACConfigResponse,
@@ -99,7 +99,7 @@ async def list_all_users_rbac_summary(
 
 
 @router.get(
-    "/users/{user_id}",
+    "/users/{user_id}/role-perms-summary",
     summary="Retrieve user's assigned roles, direct overrides, and resolved permissions.",
     status_code=status.HTTP_200_OK,
     response_model=UserRBACSummaryResponse,
@@ -114,7 +114,7 @@ async def get_user_rbac_summary(
 
 
 @router.get(
-    "/users/{user_id}/history",
+    "/users/{user_id}/snapshot-histories",
     summary="Get point-in-time RBAC snapshot history for a user.",
     status_code=status.HTTP_200_OK,
     response_model=List[UserSnapshotHistoryResponse],
@@ -139,7 +139,7 @@ async def get_user_rbac_history(
 
 
 @router.post(
-    "/users/{user_id}/rollback",
+    "/users/{user_id}/rollback-snapshot",
     summary="Rollback user RBAC state to a selected point-in-time snapshot.",
     status_code=status.HTTP_200_OK,
     response_model=UserRollbackResponse,
@@ -159,8 +159,8 @@ async def rollback_user_rbac(
     )
 
 
-@router.put(
-    "/users/{user_id}/roles",
+@router.post(
+    "/users/{user_id}/assign-roles",
     summary="Additively assign roles to a specific user and invalidate permission cache.",
     status_code=status.HTTP_200_OK,
     response_model=UserRoleAssignmentResponse,
@@ -188,7 +188,7 @@ async def assign_user_roles(
 
 
 @router.post(
-    "/users/{user_id}/demote",
+    "/users/{user_id}/demote-roles",
     summary="Demote user roles and immediately terminate active sessions.",
     status_code=status.HTTP_200_OK,
     response_model=DemoteUserRoleResponse,
@@ -217,7 +217,7 @@ async def demote_user_roles(
 
 
 @router.post(
-    "/users/{user_id}/permissions",
+    "/users/{user_id}/assign-direct-permissions",
     summary="Grant or explicitly deny custom direct permissions for a user.",
     status_code=status.HTTP_200_OK,
     response_model=UserDirectPermissionsResponse,
@@ -236,8 +236,8 @@ async def assign_user_direct_permissions(
     )
 
 
-@router.delete(
-    "/users/{user_id}/permissions",
+@router.post(
+    "/users/{user_id}/revoke-direct-permissions",
     summary="Remove direct permission overrides from a user.",
     status_code=status.HTTP_200_OK,
     response_model=UserDirectPermissionsResponse,
@@ -258,7 +258,7 @@ async def remove_user_direct_permissions(
 
 
 @router.put(
-    "/roles/{role_identifier}/permissions",
+    "/roles/{role_identifier}/assign-permissions",
     summary="Assign / update permissions for a role and invalidate affected user caches.",
     status_code=status.HTTP_200_OK,
     response_model=RolePermissionAssignmentResponse,
@@ -303,7 +303,7 @@ async def batch_assign_role_permissions(
 
 
 @router.post(
-    "/roles/{role_identifier}/reset-defaults",
+    "/roles/{role_identifier}/reset-default-permissions",
     summary="Reset a role's permissions back to its code-defined default preset.",
     status_code=status.HTTP_200_OK,
     response_model=RolePermissionAssignmentResponse,
@@ -321,7 +321,7 @@ async def reset_role_to_defaults(
 
 
 @router.get(
-    "/roles/history",
+    "/roles/snapshot-histories",
     summary="Get point-in-time permission snapshot history across all roles.",
     status_code=status.HTTP_200_OK,
     response_model=List[RoleSnapshotHistoryResponse],
@@ -346,7 +346,7 @@ async def get_all_roles_permission_history(
 
 
 @router.get(
-    "/roles/{role_identifier}/history",
+    "/roles/{role_identifier}/snapshot-histories",
     summary="Get point-in-time permission snapshot history for a role.",
     status_code=status.HTTP_200_OK,
     response_model=List[RoleSnapshotHistoryResponse],
@@ -371,7 +371,7 @@ async def get_role_permission_history(
 
 
 @router.post(
-    "/roles/{role_identifier}/rollback",
+    "/roles/{role_identifier}/rollback-snapshot",
     summary="Rollback role permissions to a selected point-in-time snapshot.",
     status_code=status.HTTP_200_OK,
     response_model=RoleRollbackResponse,
@@ -392,7 +392,7 @@ async def rollback_role_permissions(
 
 
 @router.get(
-    "/requests",
+    "/change-requests/pending-requests",
     summary="List pending dual-control change requests awaiting hierarchical review.",
     status_code=status.HTTP_200_OK,
     response_model=List[RBACChangeRequestResponse],
@@ -406,7 +406,7 @@ async def list_pending_change_requests(
 
 
 @router.post(
-    "/requests/{request_id}/approve",
+    "/change-requests/{request_id}/approve",
     summary="Approve an RBAC change request under hierarchical authority.",
     status_code=status.HTTP_200_OK,
     response_model=RBACChangeRequestResponse,
@@ -432,7 +432,7 @@ async def approve_change_request(
 
 
 @router.post(
-    "/requests/{request_id}/reject",
+    "/change-requests/{request_id}/reject",
     summary="Reject an RBAC change request.",
     status_code=status.HTTP_200_OK,
     response_model=RBACChangeRequestResponse,

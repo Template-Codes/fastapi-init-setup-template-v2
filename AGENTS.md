@@ -21,6 +21,7 @@ Before writing, analyzing, or refactoring code in any specific domain, **read th
 | **Agent Persona & Skepticism** | `.agents/persona/ASSISTANT_BEHAVIOR_PATTERN.md` | Researcher, Doubter, and Notifier mindset |
 | **BIR / CAS Compliance** | `.agents/bir-compliance/CAS_FUNCTIONAL_RULES.md` | Immutability, sequential series, audit trails, EIS |
 | **Service Layer Architecture** | `.agents/architecture/SERVICE_LAYER_ORCHESTRATION.md` | 3-tier boundary, cross-repo orchestration, thin routers |
+| **Router Layer Architecture** | `.agents/architecture/ROUTER_LAYER_ORCHISTRATION.md` | Endpoint naming, /api/public vs /api/private, dependencies |
 | **SQLAlchemy 2.0 & ORM Models** | `.agents/skills/sqlalchemy/SKILL.md` | `Mapped[...]`, `BaseRepository`, UUIDv7, async queries |
 | **Alembic Database Migrations** | `.agents/skills/alembic-migrations/SKILL.md` | `uv run alembic`, post-gen review, **User runs upgrade** |
 | **Pydantic v2 & Data Modeling** | `.agents/skills/pydantic/SKILL.md` | Mandatory `Decimal` for currency, camel/Pascal aliases |

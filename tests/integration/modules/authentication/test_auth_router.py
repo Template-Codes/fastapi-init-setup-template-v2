@@ -16,7 +16,7 @@ async def test_user_registration_endpoint_missing_secret_header(async_client: As
         "email": "unauth@example.com",
         "plainPassword": "Password123!"
     }
-    response = await async_client.post("/api/public/auth/registration", json=payload)
+    response = await async_client.post("/api/public/auth/register", json=payload)
     assert response.status_code == 401
     data = response.json()
     assert data["error"]["code"] == "UNAUTHORIZED"
@@ -37,7 +37,7 @@ async def test_user_registration_endpoint_success(async_client: AsyncClient):
     }
 
     response = await async_client.post(
-        "/api/public/auth/registration",
+        "/api/public/auth/register",
         json=payload,
         headers=headers
     )
@@ -72,13 +72,13 @@ async def test_user_authentication_and_token_refresh_integration(async_client: A
 
     headers = {settings.SECRET_HEADER_NAME: settings.SECRET_HEADER_VALUE}
 
-    # 2. Authenticate user via POST /api/public/auth/auth-tokens
+    # 2. Authenticate user via POST /api/public/auth/login
     login_payload = {
         "username": username,
         "plainPassword": plain_password
     }
     auth_res = await async_client.post(
-        "/api/public/auth/auth-tokens",
+        "/api/public/auth/login",
         json=login_payload,
         headers=headers
     )

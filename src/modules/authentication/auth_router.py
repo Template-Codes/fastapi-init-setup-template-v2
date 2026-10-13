@@ -30,7 +30,7 @@ router = APIRouter(
 
 # User registration. Public access
 @router.post(
-    "/api/public/auth/registration",
+    "/api/public/auth/register",
     summary="User registration. Pending flag on success.",
     status_code=status.HTTP_201_CREATED,
     response_model=UserRegistrationResponse,
@@ -47,7 +47,7 @@ async def user_registration(
 
 # User authentication. Public access
 @router.post(
-    "/api/public/auth/auth-tokens",
+    "/api/public/auth/login",
     summary="On success (HTTP 200 OK), grants access + refresh tokens.",
     status_code=status.HTTP_200_OK,
     response_model=UserAuthenticationResponse,
@@ -150,7 +150,7 @@ async def refresh_tokens(
 # ADMINISTRATIVE USER APPROVAL ENDPOINTS
 # ======================================================================
 @router.get(
-    "/api/private/admin/users/pending",
+    "/api/private/admin/users/pending-registrations",
     tags=["Administrative User Approvals"],
     summary="List all user registrations pending administrator approval.",
     status_code=status.HTTP_200_OK,

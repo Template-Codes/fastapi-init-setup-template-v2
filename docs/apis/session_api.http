@@ -1,5 +1,5 @@
 # ==============================================================================
-# SESSION LIFECYCLE & ADMINISTRATIVE OVERRIDES (BIR CAS ANNEX B ITEM 11.B)
+# SESSION LIFECYCLE & ADMINISTRATIVE OVERRIDES
 # ==============================================================================
 
 ### (TESTED) - WORKING AS INTENDED
@@ -14,11 +14,10 @@ X-Header: {{secret_header_value}}
 ### (TESTED) - WORKING AS INTENDED
 # 2. Admin List All Active Sessions Across All Users
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
-# Returns enriched session list with user identity (user_id, user_code, username, email, roles, full_name).
-GET {{host}}/api/private/admin/sessions
+# Returns array of active sessions with user identity (user_id, user_code, username, email, roles, full_name).
+GET {{host}}/api/private/admin/sessions/active-sessions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
-
 
 
 ### (TESTED) - WORKING AS INTENDED
@@ -26,7 +25,7 @@ X-Header: {{secret_header_value}}
 # Immediately terminates a specific active session, evicting it from Redis & DB.
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
 # Replace :session_id with the target session's UUID
-DELETE {{host}}/api/private/admin/sessions/68ff4755-bb4b-4d72-a37c-3c6165df9289
+DELETE {{host}}/api/private/admin/sessions/68ff4755-bb4b-4d72-a37c-3c6165df9289/terminate
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 

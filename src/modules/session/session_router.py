@@ -45,7 +45,7 @@ async def logout_current_session(
 
 
 @router.get(
-    "/api/private/admin/sessions",
+    "/api/private/admin/sessions/active-sessions",
     summary="List all active sessions across all users with identity telemetry (Admin only).",
     status_code=status.HTTP_200_OK,
     response_model=List[AdminUserSessionListItemResponse],
@@ -63,7 +63,7 @@ async def get_all_active_sessions(
 
 
 @router.delete(
-    "/api/private/admin/sessions/{session_id}",
+    "/api/private/admin/sessions/{session_id}/terminate",
     summary="Admin force-logout a specific session by its UUID.",
     status_code=status.HTTP_200_OK,
     response_model=SessionLogoutResponse,

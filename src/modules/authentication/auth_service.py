@@ -152,7 +152,7 @@ class AuthenticationService:
 
         if user.status != UserStatus.PENDING:
             logger.warning(f"User {user_id} is in status {user.status}, cannot approve.")
-            raise BadRequestException(message=f"User is already in {user.status} status.")
+            raise BadRequestException(message=f"User is already in {user.status.value.lower()} status.")
 
         user.status = UserStatus.ACTIVE
         if role_name:
@@ -177,7 +177,7 @@ class AuthenticationService:
 
         if user.status != UserStatus.PENDING:
             logger.warning(f"User {user_id} is in status {user.status}, cannot reject.")
-            raise BadRequestException(message=f"User is already in {user.status} status.")
+            raise BadRequestException(message=f"User is already in {user.status.value.lower()} status.")
 
         user.status = UserStatus.INACTIVE
         await self._auth_repo.db.commit()

@@ -1,211 +1,180 @@
-# RBAC Administration Module - API Endpoints & BIR Statutory Compliance
+# RBAC Administration Module - API Endpoints Specification
 
-This document specifies the endpoints belonging to the **Role-Based Access Control (`rbac`)** module (`src/modules/rbac/rbac_router.py`), detailing their functional purpose and regulatory compliance necessity under Philippine BIR CAS rules.
-
----
-
-## 1. BIR Statutory Compliance Matrix
-
-| Regulation | BIR Requirement | Architectural Implementation in RBAC Endpoints |
-| :--- | :--- | :--- |
-| **Annex B Item 11.e** | Role-Based Access Control & Segregation of Duties | Endpoints govern roles and atomic permissions, restricting non-administrative users from executing unauthorized accounting entries or overriding programs. |
-| **Annex B Item 11.h** | Immediate privilege revocation upon role demotion | Demoting a user (`/demote`) instantly evicts Redis cached permissions and terminates all active sessions for that user across all terminals. |
-| **Annex B Item 8 & 11.i** | Tamper-proof audit logs & historical immutability | Historical snapshot endpoints (`/history`) query append-only JSON ledgers proving the exact permissions an operator held when any transaction was posted. |
-| **Annex B Item 10.c & 10.f** | Prohibition of unauthorized privilege overrides | Dual-authorization change request endpoints (`/requests/*`) mandate independent supervisor approval before applying privilege escalations. |
+This document specifies the endpoints belonging to the **Role-Based Access Control (`rbac`)** module (`src/modules/rbac/rbac_router.py`), detailing their functional purpose, security access controls, and administrative lifecycle operations.
 
 ---
 
-## 2. Diagnostics & Configuration Discovery
+## 1. Diagnostics & Configuration Discovery
 
 ### `GET /api/private/admin/rbac/test-guarded-access`
 - **Purpose**:
   - Revocation challenge probe testing administrative access.
-  - Returns `200 OK` if caller holds `SUPER_ADMIN` or `ADMIN` privileges; returns `403 Forbidden` immediately upon demotion.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.h**: Provides automated verification that privilege demotions take effect immediately across all middleware without caching lag.
+  - Returns `200 OK` if caller holds `SUPER_ADMIN` or `ADMIN` privileges; returns `403 Forbidden` immediately upon demotion or cache invalidation.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with status probe payload.
 
 ---
 
-### `GET /api/private/admin/rbac`
+### `GET /api/private/admin/rbac/configuration`
 - **Purpose**:
-  - Retrieves unified RBAC hierarchy: full module-resource-action tree and all active system roles with assigned permission codes.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Provides tax auditors with an official, inspectable catalog of all system access rights, modules, and authorization boundaries.
+  - Retrieves unified RBAC configuration: full module-resource-action hierarchy tree and all active system roles with assigned permission codes.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with complete `RBACConfigResponse` object.
 
 ---
 
-## 3. User Authorization Inspection & Historical Auditing
+## 2. User Authorization Inspection & Historical Auditing
 
 ### `GET /api/private/admin/rbac/users-role-perms`
 - **Purpose**:
-  - Paginated enterprise-wide directory listing all users, their assigned roles, direct permission overrides, and resolved effective permissions.
-  - Supports filtering by role, account status, and search by username/code.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.e**: Facilitates periodic user access reviews and compliance audits of user authorities across all accounting divisions.
+  - Enterprise-wide directory listing all users, their assigned roles, direct permission overrides, and resolved effective permissions.
+  - Supports filtering by role, account status, and search by username or user code.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with array (`List[UserRBACListItemResponse]`) of user access summaries.
 
 ---
 
-### `GET /api/private/admin/rbac/users/{user_id}`
+### `GET /api/private/admin/rbac/users/{user_id}/role-perms-summary`
 - **Purpose**:
-  - Retrieves a specific user's identity summary, assigned roles, direct grants/denials, and effective permissions.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Verifies the specific operational capabilities of an operator under audit.
+  - Retrieves a specific user's identity summary, assigned roles, direct custom overrides, and effective resolved permissions.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with single `UserRBACSummaryResponse` object.
 
 ---
 
-### `GET /api/private/admin/rbac/users/{user_id}/history`
+### `GET /api/private/admin/rbac/users/{user_id}/snapshot-histories`
 - **Purpose**:
-  - Retrieves chronological, immutable point-in-time snapshots (`rbac.user_rbac_snapshots`) of a user's roles, direct overrides, and effective permissions.
-  - Includes timestamp, modifying administrator ID, and justification reason.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.i**: Crucial audit evidence. Proves to tax examiners what exact permissions an operator held at the millisecond an invoice, voucher, or journal entry was posted.
+  - Retrieves chronological, immutable point-in-time snapshots of a user's roles, direct overrides, and effective permissions.
+  - Supports filtering by `fromDate`, `toDate`, and pagination (`limit`, `offset`).
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with array (`List[UserSnapshotHistoryResponse]`) of snapshot records.
 
 ---
 
-### `POST /api/private/admin/rbac/users/{user_id}/rollback`
+### `POST /api/private/admin/rbac/users/{user_id}/rollback-snapshot`
 - **Purpose**:
-  - Restores a user's role and permission configuration to a previous point-in-time snapshot.
-  - Flushes permission cache and logs rollback justification.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.e**: Rapid incident remediation. Allows authorized administrators to instantly revert accidental or unauthorized privilege assignments while logging a permanent rollback trail.
+  - Restores a user's role and permission configuration to a selected point-in-time snapshot.
+  - Flushes permission cache and terminates active sessions if demoted.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `UserRollbackResponse`.
 
 ---
 
-## 4. User Role & Permission Mutations
+## 3. User Role & Direct Permission Mutations
 
-### `PUT /api/private/admin/rbac/users/{user_id}/roles`
+### `POST /api/private/admin/rbac/users/{user_id}/assign-roles`
 - **Purpose**:
   - Additively assigns roles to a target user.
   - Enforces governance barriers: rejects self-mutation and assignments at or above operator rank.
   - Automatically combines default permissions and invalidates user cache.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Enforces hierarchical separation of duties, ensuring administrators cannot elevate themselves or assign roles beyond their authorization ceiling.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `UserRoleAssignmentResponse`.
 
 ---
 
-### `POST /api/private/admin/rbac/users/{user_id}/demote`
+### `POST /api/private/admin/rbac/users/{user_id}/demote-roles`
 - **Purpose**:
   - Demotes a user by removing specified roles.
   - Rejects self-demotion and demoting users of equal or higher rank.
   - Rejects demoting the last active Super Admin.
   - **Zero-Trust Enforcement**: Flushes Redis permissions cache and terminates active user sessions immediately.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.h**: Enforces instant revocation. Demoted operators cannot continue executing privileged accounting actions using pre-existing sessions.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `DemoteUserRoleResponse`.
 
 ---
 
-### `POST /api/private/admin/rbac/users/{user_id}/permissions`
+### `POST /api/private/admin/rbac/users/{user_id}/assign-direct-permissions`
 - **Purpose**:
   - Grants or explicitly denies custom direct permissions for a user with mandatory business justification.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.e**: Requires documented justification for any exception to standard roles, logged permanently in audit records.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `UserDirectPermissionsResponse`.
 
 ---
 
-### `DELETE /api/private/admin/rbac/users/{user_id}/permissions`
+### `POST /api/private/admin/rbac/users/{user_id}/revoke-direct-permissions`
 - **Purpose**:
-  - Removes direct permission overrides from a user and invalidates cache.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Reverts user permissions strictly to their assigned role baselines.
+  - Removes direct permission overrides from a user and invalidates cache, restoring standard role defaults.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with updated `UserDirectPermissionsResponse`.
 
 ---
 
-## 5. Role Permission Catalog Governance
+## 4. Role Permission Catalog Governance
 
-### `PUT /api/private/admin/rbac/roles/{role_identifier}/permissions`
+### `PUT /api/private/admin/rbac/roles/{role_identifier}/assign-permissions`
 - **Purpose**:
-  - Updates the bundle of permissions associated with a role.
+  - Replaces the bundle of permissions associated with a specific role.
   - Super Admin permissions are protected as immutable.
   - Invalidates caches for all users currently assigned this role.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Modifies operational duties while protecting core system administrative definitions.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `RolePermissionAssignmentResponse`.
 
 ---
 
 ### `POST /api/private/admin/rbac/roles/batch-assign-permissions`
 - **Purpose**:
   - Atomically updates permissions across multiple roles in a single database transaction.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Atomic privilege alignment across organizational job titles without partial-state corruption.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `BatchRolePermissionAssignmentResponse`.
 
 ---
 
-### `POST /api/private/admin/rbac/roles/{role_identifier}/reset-defaults`
+### `POST /api/private/admin/rbac/roles/{role_identifier}/reset-default-permissions`
 - **Purpose**:
-  - Reverts a system role's permissions to its code-defined default preset in `enums.py`.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.e**: Allows rapid restoration of certified baseline permission matrices approved during BIR CAS evaluation.
+  - Reverts a system role's permissions back to its code-defined default preset in `enums.py`.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with restored `RolePermissionAssignmentResponse`.
 
 ---
 
-### `GET /api/private/admin/rbac/roles/history`
+### `GET /api/private/admin/rbac/roles/snapshot-histories`
 - **Purpose**:
   - Retrieves enterprise-wide chronological audit trail of all role permission mutations across all system roles.
   - Supports filtering by role identifier, date ranges (`fromDate`, `toDate`), and pagination (`limit`, `offset`).
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.i**: Enterprise-wide append-only audit trail proving all role modifications and privilege reassignments over time for tax authority and statutory examinations.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with array (`List[RoleSnapshotHistoryResponse]`) of role snapshots.
 
 ---
 
-### `GET /api/private/admin/rbac/roles/{role_identifier}/history`
+### `GET /api/private/admin/rbac/roles/{role_identifier}/snapshot-histories`
 - **Purpose**:
-  - Retrieves chronological point-in-time snapshots (`rbac.role_permission_snapshots`) for a specific target role.
-  - Returns complete serialized permissions array `[{id, code}]`, modifying administrator ID (`changed_by_id`), and change justification.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.i**: Isolated role auditability. Provides non-repudiation proof of a specific role's permission set during any historical tax period.
+  - Retrieves chronological point-in-time snapshots for a specific target role.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with array (`List[RoleSnapshotHistoryResponse]`) of snapshots for the role.
 
 ---
 
-### `POST /api/private/admin/rbac/roles/{role_identifier}/rollback`
+### `POST /api/private/admin/rbac/roles/{role_identifier}/rollback-snapshot`
 - **Purpose**:
   - Restores role permissions to a historical snapshot and invalidates affected user caches.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.e**: Rapid remediation of role definition regressions with permanent audit trail logging.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with `RoleRollbackResponse`.
 
 ---
 
-## 6. Dual-Authorization (Maker-Checker) Workflow
+## 5. Dual-Authorization (Maker-Checker) Workflow
 
-### `GET /api/private/admin/rbac/requests`
+### `GET /api/private/admin/rbac/change-requests/pending-requests`
 - **Purpose**:
   - Lists pending dual-control privilege change requests awaiting hierarchical supervisor review.
-- **BIR Statutory Necessity**:
-  - **Annex B Item 11.a & Item 8**: Provides supervisory queue for sensitive privilege escalations.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with array (`List[RBACChangeRequestResponse]`) of pending requests.
 
 ---
 
-### `POST /api/private/admin/rbac/requests/{request_id}/approve`
+### `POST /api/private/admin/rbac/change-requests/{request_id}/approve`
 - **Purpose**:
   - Approves an RBAC change request.
   - Enforces dual control: requester cannot self-approve (`requested_by_id != reviewed_by_id`).
   - Reviewer rank must strictly exceed requester rank.
   - Applies changes and invalidates target user caches.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8, 11.e, 11.i**: Mandates two-person integrity (Maker-Checker) for privilege elevations, preventing unilateral administrative compromise.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with approved `RBACChangeRequestResponse`.
 
 ---
 
-### `POST /api/private/admin/rbac/requests/{request_id}/reject`
+### `POST /api/private/admin/rbac/change-requests/{request_id}/reject`
 - **Purpose**:
   - Rejects an RBAC change request with mandatory review notes.
-- **BIR Statutory Necessity**:
-  - **Annex B Items 8 & 11.i**: Preserves permanent audit record of rejected privilege escalation attempts.
 - **Access**: `SUPER_ADMIN`, `ADMIN`.
+- **Response**: `HTTP 200 OK` with rejected `RBACChangeRequestResponse`.

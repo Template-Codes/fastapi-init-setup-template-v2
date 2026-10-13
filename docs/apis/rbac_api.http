@@ -1,5 +1,5 @@
 # ==============================================================================
-# RBAC ROLE & PERMISSION GOVERNANCE API (BIR CAS ANNEX B ITEM 11.A, 11.H & 214)
+# RBAC ROLE & PERMISSION GOVERNANCE API
 # ==============================================================================
 
 ###
@@ -12,7 +12,7 @@
 # Returns complete hierarchy (Module -> Resource -> Action) and active database roles with permissions.
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
 # @name getRBACConfiguration
-GET {{host}}/api/private/admin/rbac
+GET {{host}}/api/private/admin/rbac/configuration
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -23,7 +23,7 @@ X-Header: {{secret_header_value}}
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
 # Replace :user_id with the target user's UUID
 # @name getUserRBACSummary
-GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69
+GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/role-perms-summary
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -50,31 +50,31 @@ X-Header: {{secret_header_value}}
 
 
 ### (TESTED) - WORKING AS INTENDED
-# 1.5 View Role Permission Snapshot History
+# 1.5 View Role Permission Snapshot Histories
 # Retrieves point-in-time chronological history of permissions assigned to a role.
 # Can filter by fromDate, toDate, limit, and offset.
 # @name getRolePermissionHistory
-GET {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/history?limit=10&offset=0
+GET {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/snapshot-histories?limit=10&offset=0
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ### (TESTED) - WORKING AS INTENDED
-# 1.6 View User RBAC Snapshot History
+# 1.6 View User RBAC Snapshot Histories
 # Retrieves point-in-time chronological history of roles, direct permissions, and effective permissions.
 # Can filter by fromDate, toDate, limit, and offset.
 # @name getUserRBACHistory
-GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/history?limit=10&offset=0
+GET {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/snapshot-histories?limit=10&offset=0
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ### (TESTED) - WORKING AS INTENDED
-# 1.7 View All Roles Permission Snapshot History
+# 1.7 View All Roles Permission Snapshot Histories
 # Retrieves point-in-time chronological history of permissions across all roles (or filtered by role).
 # Can filter by role, fromDate, toDate, limit, and offset.
 # @name getAllRolesPermissionHistory
-GET {{host}}/api/private/admin/rbac/roles/history?limit=20&offset=0
+GET {{host}}/api/private/admin/rbac/roles/snapshot-histories?limit=20&offset=0
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -85,7 +85,7 @@ X-Header: {{secret_header_value}}
 # Immediately revokes cache and active sessions if demoted.
 # Replace with valid target user_id and snapshotId
 # @name rollbackUserRBAC
-POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/rollback
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/rollback-snapshot
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -95,10 +95,9 @@ X-Header: {{secret_header_value}}
 }
 
 
-
 ###
 # ------------------------------------------------------------------------------
-# SECTION 2: IMMEDIATE REVOCATION CHALLENGE (BIR CAS ANNEX B ITEM 11.H)
+# SECTION 2: IMMEDIATE REVOCATION CHALLENGE
 # ------------------------------------------------------------------------------
 
 ### (TESTED) - WORKING AS INTENDED
@@ -123,7 +122,7 @@ X-Header: {{secret_header_value}}
 # Response includes effectivePermissions inherited across all assigned roles.
 # Requires mandatory audit reason.
 # @name assignUserRoles
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -140,7 +139,7 @@ X-Header: {{secret_header_value}}
 # Demotes user by removing specified roles, recalculating effective permissions,
 # flushing Redis permissions cache, and immediately killing all active sessions.
 # @name demoteUserRoles
-POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/demote
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/demote-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -156,7 +155,7 @@ X-Header: {{secret_header_value}}
 # 3.2 Grant Direct Custom Permissions to a User
 # Adds direct grants that bypass role defaults (Effective = Roles + Grants - Denials).
 # @name grantUserDirectPermissions
-POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/assign-direct-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -173,7 +172,7 @@ X-Header: {{secret_header_value}}
 # 3.3 Explicitly Deny Direct Custom Permissions to a User
 # Adds direct revocation overrides that strip role-inherited permissions immediately.
 # @name denyUserDirectPermissions
-POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/assign-direct-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -190,7 +189,7 @@ X-Header: {{secret_header_value}}
 # 3.4 Remove Direct Permission Overrides from a User
 # Restores user's permissions back to their standard role defaults.
 # @name removeUserDirectPermissions
-DELETE {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/permissions
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/revoke-direct-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -207,7 +206,7 @@ X-Header: {{secret_header_value}}
 # Replaces permissions for a role and invalidates Redis cache for all affected users.
 # Note: SUPER_ADMIN role permissions are immutable.
 # @name assignRolePermissions
-PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/permissions
+PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/assign-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -252,11 +251,11 @@ X-Header: {{secret_header_value}}
 
 
 ###  (TESTED) - WORKING AS INTENDED
-# 3.8 Rollback Role Permissions to Selected Snapshot
+# 3.7 Rollback Role Permissions to Selected Snapshot
 # Restores role permissions to a historical point-in-time snapshot.
 # Flushes Redis caches for all users currently holding this role.
 # @name rollbackRolePermissions
-POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/rollback
+POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/rollback-snapshot
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -267,10 +266,10 @@ X-Header: {{secret_header_value}}
 
 
 ### (TESTED) - WORKING AS INTENDED
-# 3.7 Reset Role Permissions to Code-Defined Defaults
+# 3.8 Reset Role Permissions to Code-Defined Defaults
 # Reverts a system role back to its exact ROLE_DEFAULT_PERMISSIONS preset in enums.py.
 # @name resetRoleToDefaults
-POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/reset-defaults
+POST {{host}}/api/private/admin/rbac/roles/PUBLIC_USER/reset-default-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -284,7 +283,7 @@ X-Header: {{secret_header_value}}
 # 4.1 List Pending Dual-Control Change Requests
 # Lists all pending elevation requests awaiting higher-rank review.
 # @name listPendingChangeRequests
-GET {{host}}/api/private/admin/rbac/requests
+GET {{host}}/api/private/admin/rbac/change-requests/pending-requests
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -294,7 +293,7 @@ X-Header: {{secret_header_value}}
 # Higher-rank authority approves the request (dual control enforces reviewer != requester).
 # Replace :request_id with the change request UUID
 # @name approveChangeRequest
-POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
+POST {{host}}/api/private/admin/rbac/change-requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -308,7 +307,7 @@ X-Header: {{secret_header_value}}
 # Higher-rank authority rejects the change request.
 # Replace :request_id with the change request UUID
 # @name rejectChangeRequest
-POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/reject
+POST {{host}}/api/private/admin/rbac/change-requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/reject
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -326,7 +325,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.1] Tampered Role Name -> Expected: 400 Bad Request (INVALID_ROLE_ID)
 # Client attempts to assign a forged or non-existent role name.
 # @name testTamperedRoleName
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -343,7 +342,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.2] Tampered Permission Code -> Expected: 400 Bad Request (INVALID_PERMISSION_ID)
 # Client attempts to assign an unverified or injected permission code.
 # @name testTamperedPermissionCode
-PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/permissions
+PUT {{host}}/api/private/admin/rbac/roles/STAFF_USER/assign-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -360,7 +359,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.3] Missing Mandatory Audit Reason -> Expected: 422 Unprocessable Entity
 # Request omits the required 'reason' audit trail field.
 # @name testMissingAuditReason
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -375,7 +374,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.4] Audit Reason Too Short (<5 chars) -> Expected: 422 Unprocessable Entity
 # Request provides a trivially short string failing audit quality constraint.
 # @name testShortAuditReason
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2eb-7174-9534-2fae492eb2b1/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -392,7 +391,7 @@ X-Header: {{secret_header_value}}
 # Operator attempts to modify their own roles (must be rejected to prevent self-elevation).
 # Replace target UUID below with the logged-in operator's own user UUID.
 # @name testSelfMutationRefusal
-PUT {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/roles
+POST {{host}}/api/private/admin/rbac/users/01a11ebe-0b6b-7c24-9ded-22653d851d9d/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -408,7 +407,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.6] Role Rank Escalation -> Expected: 403 Forbidden (ROLE_RANK_ESCALATION)
 # An ADMIN (Rank 50) attempts to assign SUPER_ADMIN (Rank 100) to another user.
 # @name testRoleRankEscalationRefusal
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -425,7 +424,7 @@ X-Header: {{secret_header_value}}
 # An ADMIN (Rank 50) attempts to modify a SUPER_ADMIN (Rank 100) user.
 # Replace UUID below with a Super Admin user UUID.
 # @name testTargetUserRankViolation
-PUT {{host}}/api/private/admin/rbac/users/01a11ebf-2a8b-7a49-8c26-53d2859e7a78/roles
+POST {{host}}/api/private/admin/rbac/users/01a11ebf-2a8b-7a49-8c26-53d2859e7a78/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -441,7 +440,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.8] Lockout Protection: Demoting Last Super Admin -> Expected: 409 Conflict (CANNOT_DEMOTE_LAST_SUPER_ADMIN)
 # Attempting to strip SUPER_ADMIN from the only remaining active Super Admin in the system.
 # @name testLastSuperAdminLockoutProtection
-PUT {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/roles
+POST {{host}}/api/private/admin/rbac/users/01a11fcc-e2bc-79e6-903c-2983865dae69/assign-roles
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -457,7 +456,7 @@ X-Header: {{secret_header_value}}
 # [REFUSAL 5.9] Immutability Violation: Mutating SUPER_ADMIN Role -> Expected: 403 Forbidden (SUPER_ADMIN_IMMUTABLE)
 # Attempting to add, edit, or remove permissions on the immutable SUPER_ADMIN role.
 # @name testSuperAdminRoleImmutability
-PUT {{host}}/api/private/admin/rbac/roles/SUPER_ADMIN/permissions
+PUT {{host}}/api/private/admin/rbac/roles/SUPER_ADMIN/assign-permissions
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -474,7 +473,7 @@ X-Header: {{secret_header_value}}
 # Requester attempts to approve their own pending elevation change request.
 # Replace :request_id with a change request submitted by the caller.
 # @name testDualControlSelfApprovalRefusal
-POST {{host}}/api/private/admin/rbac/requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
+POST {{host}}/api/private/admin/rbac/change-requests/01a11fcc-e2eb-7174-9534-2fae492eb2b1/approve
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
