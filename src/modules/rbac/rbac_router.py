@@ -48,7 +48,7 @@ async def test_guarded_access(
     caller_id: UUID = Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
 ) -> dict:
     """
-    Immediate Revocation Challenge Probe (BIR CAS Annex B Item 11.h):
+    Immediate Revocation Challenge Probe:
     Returns 200 OK if caller has active administrative privileges.
     Returns 403 Forbidden immediately upon demotion or cache invalidation.
     """

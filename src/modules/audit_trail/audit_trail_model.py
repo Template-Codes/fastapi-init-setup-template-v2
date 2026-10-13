@@ -28,8 +28,7 @@ if TYPE_CHECKING:
 
 class AuditLog(Base):
     """
-    Statutory BIR CAS Audit Trail and unalterable activity ledger.
-    Governed by BIR Annex B Lines 271-295 and Item 11.i.
+    Statutory Audit Trail and unalterable activity ledger.
     """
 
     __tablename__ = "audit_logs"

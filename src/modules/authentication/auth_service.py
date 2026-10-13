@@ -124,7 +124,7 @@ class AuthenticationService:
 
 
     # ======================================================================
-    # ADMIN USER APPROVAL WORKFLOW (BIR ANNEX B ITEM 11.A)
+    # ADMIN USER APPROVAL WORKFLOW 
     # ======================================================================
     async def get_pending_registrations(self) -> list[PendingUserResponse]:
         """Fetch all registrations currently awaiting administrator approval."""

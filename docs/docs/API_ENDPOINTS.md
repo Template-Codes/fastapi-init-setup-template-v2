@@ -1,24 +1,10 @@
 # Enterprise API Endpoints - Master Reference & BIR Compliance
 
-This document provides the system-wide catalog of all HTTP API endpoints in the XCOM Computerized Accounting System (CAS) and ERP. It details each endpoint's functional purpose and its mandatory statutory necessity under Bureau of Internal Revenue (BIR) regulations.
+This document provides the system-wide catalog of all HTTP API endpoints in the XCOM. It details each endpoint's functional purpose and its mandatory statutory necessity under best implementations and security practices.
 
 ---
 
-## 1. BIR Statutory Compliance Baseline (`bir-docs/`)
-
-All endpoints in this system enforce the following statutory mandates:
-- **`Annex B Item 8 & 11.i`**: Tamper-proof, append-only activity logging and audit trail protection.
-- **`Annex B Item 10.c & 10.f`**: Immutability of posted accounting records; zero in-place mutations or program bypasses.
-- **`Annex B Item 10.g`**: Every business transaction stamped with the authenticated user ID (`created_by`), never accepted from request bodies.
-- **`Annex B Item 11.a`**: Administrative user vetting and approval prior to granting system access.
-- **`Annex B Item 11.b & 11.c`**: Alphanumeric password complexity, consecutive failed login lockout, and prevention of simultaneous active sessions across multiple terminals.
-- **`Annex B Item 11.e & 11.h`**: Strict Role-Based Access Control (RBAC) and immediate privilege revocation upon demotion.
-- **`RMC No. 98-2026 §IV.4-8` & `EIS API Guide`**: Automated, signed, and encrypted JSON transmission of electronic invoices with non-repudiation and retry lineage tracking.
-- **`RR No. 17-2013 / RR No. 5-2014`**: 10-year statutory data retention for financial records and server transmission receipts.
-
----
-
-## 2. Global System Health Endpoint
+## 1. Global System Health Endpoint
 
 ### `GET /health`
 - **Purpose**:
@@ -30,7 +16,7 @@ All endpoints in this system enforce the following statutory mandates:
 
 ---
 
-## 3. Master Endpoint Index by Module
+## 2. Master Endpoint Index by Module
 
 | Module | Base Path / Prefix | Endpoints Summary | Detailed Module Docs |
 | :--- | :--- | :--- | :--- |

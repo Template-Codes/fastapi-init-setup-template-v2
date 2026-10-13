@@ -189,7 +189,7 @@ class SystemPermission(str, Enum):
     SESSION_SESSION_READ = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.READ.value}"
     SESSION_SESSION_REVOKE = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.REVOKE.value}"
 
-    # Audit Trail Module (BIR CAS Annex B)
+    # Audit Trail Module
     AUDIT_TRAIL_AUDIT_LOG_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.READ.value}"
     AUDIT_TRAIL_AUDIT_LOG_EXPORT = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.EXPORT.value}"
     AUDIT_TRAIL_INTEGRITY_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.INTEGRITY_CHECK.value}:{ActionName.READ.value}"

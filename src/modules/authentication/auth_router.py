@@ -147,7 +147,7 @@ async def refresh_tokens(
 
 
 # ======================================================================
-# ADMINISTRATIVE USER APPROVAL ENDPOINTS (BIR ANNEX B ITEM 11.A)
+# ADMINISTRATIVE USER APPROVAL ENDPOINTS
 # ======================================================================
 @router.get(
     "/api/private/admin/users/pending",

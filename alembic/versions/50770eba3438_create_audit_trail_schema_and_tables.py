@@ -146,12 +146,12 @@ def upgrade() -> None:
     op.drop_constraint(op.f('fk_user_rbac_snapshots_changed_by_id_users'), 'user_rbac_snapshots', schema='rbac', type_='foreignkey')
     op.create_foreign_key(op.f('fk_user_rbac_snapshots_changed_by_id_users'), 'user_rbac_snapshots', 'users', ['changed_by_id'], ['id'], source_schema='rbac', referent_schema='auth', ondelete='SET NULL')
 
-    # 4. Database-level immutability enforcement trigger (BIR CAS Annex B Item 11.i)
+    # 4. Database-level immutability enforcement trigger
     op.execute("""
         CREATE OR REPLACE FUNCTION audit_trail.fn_prevent_audit_log_mutation()
         RETURNS TRIGGER AS $$
         BEGIN
-            RAISE EXCEPTION 'BIR CAS Security Violation: Records in audit_trail.audit_logs are immutable and cannot be modified or deleted. (Annex B Item 11.i)'
+            RAISE EXCEPTION 'Security Violation: Records in audit_trail.audit_logs are immutable and cannot be modified or deleted.'
             USING ERRCODE = '55000';
         END;
         $$ LANGUAGE plpgsql;
