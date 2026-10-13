@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     ACCESS_JWT_EXPIRY_SEC: int | None = None
     REFRESH_JWT_EXPIRY_SEC: int | None = None
     JWT_ALGORITHM: str | None = None
-    SESSION_IDLE_TIMEOUT_SEC: int = 1800  # 30 mins
     
     # Cookie Settings
     COOKIE_SECURE: bool = False # not set in .env
