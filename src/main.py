@@ -25,6 +25,7 @@ from modules.audit_trail import audit_trail_model
 from modules.authentication.auth_router import router as auth_router
 from modules.session.session_router import router as session_router
 from modules.rbac.rbac_router import router as rbac_router
+from modules.audit_trail.audit_trail_router import router as audit_trail_router
 
 from exceptions.exception_handlers import register_exception_handlers
 from core.logging_middleware import LoggingMiddleware
@@ -103,6 +104,7 @@ register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(session_router)
 app.include_router(rbac_router)
+app.include_router(audit_trail_router)
 
 @app.get("/health", tags=["System"])
 async def health_check():

@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
+from uuid import UUID
 from fastapi import Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,12 @@ class AuditTrailRepository(BaseRepository[AuditLog]):
 
     def __init__(self, db: AsyncSession = Depends(get_async_db)):
         super().__init__(db, AuditLog)
+
+    async def get_by_id(self, id: UUID) -> Optional[AuditLog]:
+        """Fetch audit log by UUID (accounting for composite primary key)."""
+        stmt = select(AuditLog).where(AuditLog.id == id)
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
     async def create_log(self, data: dict, *, commit: bool = False) -> AuditLog:
         """

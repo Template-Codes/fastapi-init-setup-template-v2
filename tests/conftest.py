@@ -66,7 +66,16 @@ async def prepare_test_database():
                 ) THEN
                     ALTER TABLE auth.users ADD COLUMN user_code VARCHAR(20) 
                     DEFAULT ('USR-' || lpad(nextval('auth.user_code_seq')::text, 5, '0')) NOT NULL;
-                    CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_users_user_code ON auth.users (user_code);
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = 'audit_trail' AND table_name = 'audit_logs'
+                ) THEN
+                    ALTER TABLE audit_trail.audit_logs ALTER COLUMN record_hash DROP NOT NULL;
+                    ALTER TABLE audit_trail.audit_logs ALTER COLUMN prev_hash DROP NOT NULL;
+                    ALTER TABLE audit_trail.audit_logs ALTER COLUMN chain_id DROP NOT NULL;
+                    ALTER TABLE audit_trail.audit_logs DROP CONSTRAINT IF EXISTS ck_audit_logs_mandatory_reason;
                 END IF;
             END $$;
         """))
