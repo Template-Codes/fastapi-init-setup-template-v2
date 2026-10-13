@@ -1,6 +1,6 @@
 # Audit Trail Module - Entity Relationship Diagram (ERD)
 
-This document details the database architecture of the **Audit Trail (`audit_trail`)** module (`src/modules/audit_trail/`), which enforces statutory BIR CAS activity logging (Annex B Lines 271–295, 11.i), forensic change diffing, tamper-evident cryptographic hash chaining, and report/export traceability.
+This document details the database architecture of the **Audit Trail (`audit_trail`)** module (`src/modules/audit_trail/`), which enforces enterprise-grade activity logging, non-repudiation, forensic change diffing, tamper-evident cryptographic hash chaining, and report/export traceability.
 
 ---
 
@@ -31,7 +31,7 @@ erDiagram
         varchar resource "ResourceName enum"
         varchar action "ActionName enum"
         text reason "Mandatory for VOID, ADJUSTMENT, etc."
-        varchar target_schema "e.g. accounting, auth, eis"
+        varchar target_schema "e.g. auth, session, rbac, profile"
         varchar target_table "e.g. invoices, users, roles"
         varchar target_id "PK or business key of affected record"
         varchar target_code "Document number (e.g. INV-000042)"
@@ -96,23 +96,23 @@ Primary immutable stream capturing all business mutations, security events, acce
 | `created_at` | `TIMESTAMPTZ` | **PK**, Default: `now()` | Server-generated entry timestamp in UTC. Forms composite PK with `id` for range partitioning. |
 | `sequence_number` | `BIGINT` | **UK**, **INDEX**, Non-nullable | Monotonic integer from `audit_trail.audit_seq` for gap detection and cursor pagination. |
 | `user_id` | `UUID` | **FK**, **INDEX**, Nullable | References `auth.users.id` with `ON DELETE RESTRICT`. Null for unauthenticated attempts. |
-| `user_code` | `VARCHAR(20)` | Nullable | User code snapshot (e.g., `USR-00001`) at time of execution (Annex B Line 290). |
+| `user_code` | `VARCHAR(20)` | Nullable | User code snapshot (e.g., `USR-00001`) at time of execution for historical traceability. |
 | `username_snapshot` | `VARCHAR(50)` | Nullable | Username snapshot at execution time; records attempted username during failed logins. |
 | `severity` | `VARCHAR(20)` | **INDEX**, Non-nullable | Event severity: `INFO`, `SUCCESS`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `module` | `VARCHAR(50)` | **INDEX**, Non-nullable | System module originating the event (`ModuleName` enum). |
 | `resource` | `VARCHAR(50)` | **INDEX**, Non-nullable | Domain entity / API resource originating the event (`ResourceName` enum). |
-| `action` | `VARCHAR(50)` | **INDEX**, Non-nullable | Statutory or operational action (`ActionName` enum). |
+| `action` | `VARCHAR(50)` | **INDEX**, Non-nullable | Executed action classification (`ActionName` enum). |
 | `reason` | `TEXT` | Nullable | Justification reason. Mandatory for `VOID`, `ADJUSTMENT`, `ROLE_CHANGE`, `SECURITY_LOCKOUT`. |
-| `target_schema` | `VARCHAR(50)` | Nullable | Affected database schema (e.g., `accounting`, `auth`, `rbac`, `eis`). |
+| `target_schema` | `VARCHAR(50)` | Nullable | Affected database schema (e.g., `auth`, `session`, `rbac`, `profile`). |
 | `target_table` | `VARCHAR(100)` | **INDEX**, Nullable | Affected database table (e.g., `invoices`, `users`, `roles`). |
 | `target_id` | `VARCHAR(100)` | **INDEX**, Nullable | Primary key / ID of the affected record. |
 | `target_code` | `VARCHAR(100)` | **INDEX**, Nullable | Human-readable document serial or business code (`INV-000042`, `ROLE_ADMIN`). |
-| `is_reversal` | `BOOLEAN` | Default: `false`, Non-nullable | True if this entry represents a reversing transaction / void (Annex B Item 10.c). |
+| `is_reversal` | `BOOLEAN` | Default: `false`, Non-nullable | True if this entry represents an accounting or operational reversing transaction. |
 | `reversal_for_id`| `VARCHAR(100)` | **INDEX**, Nullable | Links reversing audit record directly to original transaction ID/code. |
 | `old_values` | `JSONB` | Nullable | Snapshot of record state before mutation (redacted of secrets). |
 | `new_values` | `JSONB` | Nullable | Snapshot of record state after mutation (redacted of secrets). |
 | `changed_fields` | `JSONB` | Nullable | Compact JSON array of modified attribute names for fast indexing and badge display. |
-| `context` | `JSONB` | Nullable | Structured context (report filters, EIS rejection codes, HTTP status, client metadata). |
+| `context` | `JSONB` | Nullable | Structured context (report filters, error codes, HTTP status, client metadata). |
 | `ip_address` | `INET` / `VARCHAR(45)` | Nullable | Client IP address captured from authenticated connection or trusted proxy headers. |
 | `user_agent` | `TEXT` | Nullable | Raw client browser / API client user-agent string. |
 | `request_id` | `VARCHAR(64)` | **INDEX**, Nullable | HTTP correlation ID (`X-Request-ID`) connecting web logs to database entries. |
@@ -163,7 +163,7 @@ Stores periodic cryptographic checkpoints (Merkle roots or tail digests) verifie
 
 1. **Unbypassable Immutability Trigger (`tg_prevent_audit_log_mutation`)**:
    - `BEFORE UPDATE OR DELETE` trigger on `audit_trail.audit_logs`.
-   - Raises an unbypassable exception (`SQLSTATE 55000`) forbidding in-place mutation or purging (BIR Annex B Item 11.i).
+   - Raises an unbypassable exception (`SQLSTATE 55000`) forbidding in-place mutation or purging to guarantee forensic non-repudiation.
 2. **PostgreSQL Role Revocation**:
    - `REVOKE UPDATE, DELETE, TRUNCATE ON audit_trail.audit_logs FROM PUBLIC, app_role;`
    - `GRANT SELECT, INSERT ON audit_trail.audit_logs TO app_role;`

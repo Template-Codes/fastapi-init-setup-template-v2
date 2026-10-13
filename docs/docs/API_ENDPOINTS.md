@@ -34,9 +34,10 @@ This document provides the system-wide catalog of all HTTP API endpoints in the 
 2. **`JWTValidator`**:
    - Enforces cryptographic verification of access tokens in HTTP-Only cookies or Authorization Bearer headers.
    - Attaches authenticated `user_id` and `session_id` directly to `request.state`.
-3. **`RateLimitByIP`**:
-   - Sliding-window rate limiter protecting public endpoints against denial-of-service and credential stuffing attacks.
+3. **`RateLimitByIP` & `RateLimitByUser`**:
+   - `rate_limit_by_ip`: Sliding-window rate limiter protecting public endpoints against denial-of-service and credential stuffing attacks.
+   - `rate_limit_by_user`: User-scoped rate limiter protecting private authenticated endpoints per account, preventing corporate NAT IP conflicts.
 4. **`RBACGuard` (`require_role` / `require_permission`)**:
    - Non-blocking authorization check enforcing hierarchical rank and permission requirements before endpoint execution.
-5. **`CredentialGuard` (`verify_admin_user_credential`)**:
+5. **`CredentialGuard` (`verify_sudo_credential`)**:
    - Requires re-authentication with password for high-risk operations (e.g. emergency session termination).

@@ -21,7 +21,7 @@ erDiagram
         varchar last_name "Surname"
         varchar suffix "Jr, Sr, III (optional)"
         varchar nickname "Informal name (optional)"
-        date date_of_birth "Birth date for HR/tax"
+        date date_of_birth "Birth date for HR/identity records"
         enum gender "MALE|FEMALE|OTHERS"
         varchar cellphone_number "Mobile phone number"
         varchar street "Street address and unit"
@@ -51,7 +51,7 @@ Personal demographic details, phone numbers, and physical residential/business a
 | `last_name` | `VARCHAR(50)` | Non-nullable | Legal family surname. |
 | `suffix` | `VARCHAR(10)` | Nullable | Name suffix (e.g., Jr., Sr., III, CPA). |
 | `nickname` | `VARCHAR(50)` | Nullable | Preferred alias for informal notifications and greetings. |
-| `date_of_birth` | `DATE` | Nullable | Date of birth for statutory HR, labor, and tax compliance records. |
+| `date_of_birth` | `DATE` | Nullable | Date of birth for organizational HR records and identity verification. |
 | `gender` | `UserGender` (Enum) | Non-nullable | Biological or administrative gender (`MALE`, `FEMALE`, `OTHERS`). |
 | `cellphone_number` | `VARCHAR(20)` | Non-nullable | Primary mobile number for SMS 2FA notifications and company contact. |
 | `street` | `VARCHAR(150)` | Nullable | Building number, street address, and barangay/district. |

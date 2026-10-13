@@ -1,6 +1,6 @@
 # Authentication Module - Entity Relationship Diagram (ERD)
 
-This document details the database architecture of the **Authentication (`auth`)** module, which serves as the central identity anchor for the XCOM ERP & CAS platform.
+This document details the database architecture of the **Authentication (`auth`)** module, which serves as the central identity anchor for the XCOM ERP platform.
 
 ---
 
@@ -11,7 +11,7 @@ erDiagram
     AUTH_USERS {
         uuid id PK "UUIDv7 primary key"
         varchar user_code UK "USR-XXXXX server default sequence"
-        varchar username UK "Case-sensitive unique login"
+        varchar username UK "Login handle"
         varchar email UK "Unique email identifier"
         varchar password_hash "Argon2id cryptographic hash"
         enum status "PENDING|ACTIVE|INACTIVE|SUSPENDED"
@@ -52,7 +52,7 @@ The root table managing system credentials, identity codes, and account lifecycl
 | Field | Type | Constraints | Description & Purpose |
 | :--- | :--- | :--- | :--- |
 | `id` | `UUID` | **PK**, Default: `uuid7()` | Time-ordered UUIDv7 ensuring efficient B-tree index insertion and global uniqueness. |
-| `user_code` | `VARCHAR(20)` | **UK**, **INDEX**, Non-nullable | Human-readable identifier formatted as `USR-XXXXX`. Generated via PostgreSQL sequence `auth.user_code_seq`. Used on physical receipts, vouchers, and UI displays. |
+| `user_code` | `VARCHAR(20)` | **UK**, **INDEX**, Non-nullable | Human-readable identifier formatted as `USR-XXXXX`. Generated via PostgreSQL sequence `auth.user_code_seq`. Displayed on reports, admin tables, audit trail logs, and UI displays. |
 | `username` | `VARCHAR(50)` | **UK**, **INDEX**, Non-nullable | Unique username used for credential authentication. |
 | `email` | `VARCHAR(100)` | **UK**, **INDEX**, Non-nullable | Primary contact email for password resets, 2FA, and official audit notices. |
 | `password_hash` | `VARCHAR(255)` | Non-nullable | Argon2id salted password hash. Plaintext passwords are never stored. |

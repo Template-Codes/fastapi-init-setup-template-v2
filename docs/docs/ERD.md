@@ -1,6 +1,6 @@
 # System-Wide Entity Relationship Diagram (ERD)
 
-This document provides the high-level database architecture for the XCOM Computerized Accounting System (CAS) and Enterprise Resource Planning (ERP). It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
+This document provides the high-level database architecture for the XCOM Enterprise Resource Planning (ERP) platform. It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
 
 ---
 
@@ -113,57 +113,7 @@ erDiagram
         varchar reason "Change audit log"
     }
 
-    %% BIR EIS Schema (eis)
-    EIS_SESSIONS {
-        uuid id PK "UUIDv7 session ID"
-        varchar auth_token "BIR machine API JWT"
-        varchar session_key "HMAC session key"
-        timestamptz token_expiry "Token validity deadline"
-        boolean is_active "Session active status"
-    }
-
-    EIS_TRANSMISSIONS {
-        uuid id PK "UUIDv7 transmission ID"
-        varchar submit_id UK "Unique submission batch ID"
-        uuid parent_transmission_id FK "Self-referencing retry link"
-        enum status "PENDING|PROCESSING|SUCCESS|FAILED|PARTIAL"
-        varchar ack_id "BIR acknowledgement token"
-        integer invoice_count "Count of invoices in batch"
-        varchar process_status_code "BIR 2-character status code"
-        timestamptz submitted_at "Batch transmission time"
-        timestamptz acknowledged_at "BIR ACK receipt time"
-        text raw_request "AES encrypted request body"
-        text raw_response "Raw BIR response payload"
-    }
-
-    EIS_TRANSMISSION_ITEMS {
-        uuid id PK "UUIDv7 item ID"
-        uuid transmission_id FK "FK eis.eis_transmissions.id (CASCADE)"
-        varchar eis_unique_id "BIR 24-character unique invoice ID"
-        varchar comp_invoice_id "Internal invoice/billing ID"
-        enum result_status "SUCCESS|FAILED"
-        varchar fail_reason_code "BIR error code"
-        text fail_message "Detailed error explanation"
-    }
-
-    %% Cross-Module Relationships
-    AUTH_USERS ||--|| PROFILE_USER_PROFILES : "1-to-1 extension"
-    AUTH_USERS ||--o{ SESSION_SESSIONS : "owns (1-to-N)"
-    AUTH_USERS ||--o{ RBAC_USER_ROLES : "assigned"
-    AUTH_USERS ||--o{ RBAC_USER_PERMISSIONS : "direct overrides"
-    AUTH_USERS ||--o{ RBAC_USER_RBAC_SNAPSHOTS : "snapshot audit"
-    AUTH_USERS ||--o{ RBAC_CHANGE_REQUESTS : "initiates/reviews"
-
-    RBAC_ROLES ||--o{ RBAC_USER_ROLES : "grouped in"
-    RBAC_ROLES ||--o{ RBAC_ROLE_PERMISSIONS : "grants"
-    RBAC_PERMISSIONS ||--o{ RBAC_ROLE_PERMISSIONS : "linked to"
-    RBAC_PERMISSIONS ||--o{ RBAC_USER_PERMISSIONS : "explicit rule"
-    RBAC_ROLES ||--o{ RBAC_ROLE_PERMISSION_SNAPSHOTS : "versioned"
-
-    EIS_TRANSMISSIONS ||--o{ EIS_TRANSMISSIONS : "retry lineage (self-ref)"
-    EIS_TRANSMISSIONS ||--o{ EIS_TRANSMISSION_ITEMS : "contains (1-to-N)"
-
-    %% Statutory Audit Trail Schema (audit_trail)
+    %% Enterprise Audit Trail Schema (audit_trail)
     AUDIT_TRAIL_LOGS {
         uuid id PK "UUIDv7 primary key"
         timestamptz created_at PK "Partitioning composite key"
@@ -221,6 +171,20 @@ erDiagram
         jsonb verification_details "Integrity metrics"
     }
 
+    %% Cross-Module Relationships
+    AUTH_USERS ||--|| PROFILE_USER_PROFILES : "1-to-1 extension"
+    AUTH_USERS ||--o{ SESSION_SESSIONS : "owns (1-to-N)"
+    AUTH_USERS ||--o{ RBAC_USER_ROLES : "assigned"
+    AUTH_USERS ||--o{ RBAC_USER_PERMISSIONS : "direct overrides"
+    AUTH_USERS ||--o{ RBAC_USER_RBAC_SNAPSHOTS : "snapshot audit"
+    AUTH_USERS ||--o{ RBAC_CHANGE_REQUESTS : "initiates/reviews"
+
+    RBAC_ROLES ||--o{ RBAC_USER_ROLES : "grouped in"
+    RBAC_ROLES ||--o{ RBAC_ROLE_PERMISSIONS : "grants"
+    RBAC_PERMISSIONS ||--o{ RBAC_ROLE_PERMISSIONS : "linked to"
+    RBAC_PERMISSIONS ||--o{ RBAC_USER_PERMISSIONS : "explicit rule"
+    RBAC_ROLES ||--o{ RBAC_ROLE_PERMISSION_SNAPSHOTS : "versioned"
+
     AUTH_USERS ||--o{ AUDIT_TRAIL_LOGS : "acts in (1-to-N)"
     SESSION_SESSIONS ||--o{ AUDIT_TRAIL_LOGS : "terminal context (1-to-N)"
     AUTH_USERS ||--o{ AUDIT_TRAIL_EXPORT_JOBS : "requests (1-to-N)"
@@ -238,8 +202,7 @@ erDiagram
 | **`profile`** | Personal Demographics & Physical Address | `profile.user_profiles` | Strictly dependent on `auth.users` (1-to-1, CASCADE). |
 | **`session`** | Refresh Token Ledger & Device Audits | `session.sessions` | Dependent on `auth.users` (1-to-N, CASCADE). |
 | **`rbac`** | Permissions, Roles, Dual-Auth & Snapshots | `rbac.roles`, `rbac.permissions` | Dependent on `auth.users` for user assignments, audit attribution, and authorizers. |
-| **`eis`** | BIR EIS v2.0 Invoicing Compliance | `eis.eis_transmissions` | Decoupled regulatory sandbox; operates independently of user schemas for security and strict compliance isolation. |
-| **`audit_trail`** | Statutory BIR CAS Audit Trail, Hash Chains, Forensic Diffs | `audit_trail.audit_logs` | References `auth.users` (ON DELETE RESTRICT) and `session.sessions`. Completely immutable via database trigger. |
+| **`audit_trail`** | Enterprise Activity Audit Trail, Hash Chains, Forensic Diffs | `audit_trail.audit_logs` | References `auth.users` (ON DELETE RESTRICT) and `session.sessions`. Completely immutable via database trigger. |
 
 ---
 
@@ -248,10 +211,11 @@ erDiagram
 1. **Identity Deletion Cascades (`CASCADE`)**:
    - When an `auth.users` record is removed, all dependent operational records (`profile.user_profiles`, `session.sessions`, `rbac.user_roles`, and `rbac.user_permissions`) are automatically purged to prevent orphaned identity state.
 2. **Audit Attribution Protection (`SET NULL` / `RESTRICT`)**:
-   - For statutory audit and approval records (`rbac.user_permissions.assigned_by_id`, `rbac.rbac_change_requests.reviewed_by_id`, and snapshot tables `changed_by_id`), foreign keys are constrained to `ON DELETE SET NULL`.
-   - For `audit_trail.audit_logs`, the foreign key to `auth.users.id` is constrained to `ON DELETE RESTRICT` (BIR CAS prohibits user purging once transactions or audit records exist).
-3. **Regulatory Isolation (`eis.*`)**:
-   - The `eis` schema has no foreign key dependencies to user or session tables. All compliance transmissions must be verifiable purely on statutory parameters (TIN, branch code, invoice sequence, and BIR submission tokens).
+   - For internal governance and approval records (`rbac.user_permissions.assigned_by_id`, `rbac.rbac_change_requests.reviewed_by_id`, and snapshot tables `changed_by_id`), foreign keys are constrained to `ON DELETE SET NULL`.
+   - For `audit_trail.audit_logs`, the foreign key to `auth.users.id` is constrained to `ON DELETE RESTRICT` (prevents user purging once operational audit records exist to ensure non-repudiation and forensic accountability).
+3. **Cryptographic Integrity & Immutability (`audit_trail.*`)**:
+   - The `audit_trail` schema operates as an immutable forensic ledger. Database triggers (`tg_prevent_audit_log_mutation`) raise `SQLSTATE 55000` to unconditionally block in-place `UPDATE` and `DELETE` operations on `audit_trail.audit_logs`.
+   - The table maintains sequential cryptographic hash chaining (`record_hash` and `prev_hash`) and periodic Merkle checkpoints in `audit_hash_checkpoints` to verify tamper resistance across historical logs.
 
 ---
 
@@ -264,4 +228,3 @@ For table specifications, field-level data dictionaries, constraints, and index 
 - [User Profile ERD](/xcom/erp/docs/docs/profile/ERD.md)
 - [RBAC & Dual-Authorization ERD](/xcom/erp/docs/docs/rbac/ERD.md)
 - [Audit Trail ERD](/xcom/erp/docs/docs/audit_trail/ERD.md)
-

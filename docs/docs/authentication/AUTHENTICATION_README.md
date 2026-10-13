@@ -2,7 +2,7 @@
 
 > **System Architecture & Developer Reference Document**  
 > **Date & Time Written**: August 16, 2026 at 5:00 PM
-> **Document Status**: Production / Boilerplate Standard  
+> **Document Status**: Production Core Architecture  
 > **Coverage**: Authentication, Hybrid RBAC + ABAC Authorization, Refresh Token Rotation (RTR), Fast-Path Redis Session Verification, Asynchronous DB Throttling, IP-Scoped Brute-Force Mitigation  
 > **Exclusions**: Test Suites (`tests/`), Registration (Unchanged)  
 
@@ -10,14 +10,14 @@
 
 ## 1. Executive Summary & Design Intention
 
-This authentication and authorization subsystem is designed as an enterprise-grade, defense-in-depth foundation for FastAPI applications. It is engineered to serve as a reusable production template to prevent boilerplate rewrite across future projects.
+This authentication and authorization subsystem is designed as an enterprise-grade, defense-in-depth foundation for FastAPI applications. It is engineered to serve as a robust, scalable security core for the XCOM enterprise backend.
 
 ### Core Architectural Principles
-- **Defense in Depth**: Authentication checks occur at both the network edge (IP-based rate limiting), middleware layer ([JWTValidator](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L16-L183) for 0ms CPU verification + O(1) Redis session checks), controller/router layer (HTTP-Only cookie parsing & JWT validation), service layer (ABAC status checks, Argon2id verification, granular IP+Username lockout), and persistence layer (SHA-256 hashed tokens).
+- **Defense in Depth**: Authentication checks occur at both the network edge (IP-based rate limiting), middleware layer ([JWTValidator](/xcom/erp/src/middlewares/jwt_validator.py#L16-L183) for 0ms CPU verification + O(1) Redis session checks), controller/router layer (HTTP-Only cookie parsing & JWT validation), service layer (ABAC status checks, Argon2id verification, granular IP+Username lockout), and persistence layer (SHA-256 hashed tokens).
 - **Refresh Token Rotation (RTR) & Instant Invalidation**: On every token refresh request (`POST /api/public/auth/refresh-token`), **both** access and refresh tokens are rotated. Presenting an old or previously used refresh token triggers automatic reuse detection, immediately revoking the session across PostgreSQL and Redis.
 - **Database I/O Throttling (Fast-Path Architecture)**: Token refresh operations validate against a single authoritative Redis cache in **0.5ms**. Database updates (rotating hashes and timestamp synchronization) are offloaded to non-blocking background tasks (`asyncio.create_task`) using dedicated async sessions (`postgres_client_async_session`), eliminating DB I/O overhead from the request-response hot path.
 - **Granular IP + Username Lockout Model**: Brute-force protection tracks failed attempts per `(IP, Username)` pair in Redis. Blocking 5 failed attempts locks out only the offending IP-username combination, preventing cross-IP Denial of Service (DoS) attacks on legitimate users.
-- **Single Active Session Enforcement (Option B Exclusive Lock & BIR Annex B Item 11.b Compliance)**: Strictly restricts a user account from concurrent active sessions across multiple terminals. On login, if an active session exists that was active within the idle window (`SESSION_IDLE_TIMEOUT_SEC` = 30 minutes), the second login is rejected with HTTP 409 Conflict (`ACTIVE_SESSION_EXISTS`). If the previous session has been idle for > 30 minutes (e.g. browser closed or computer rebooted), it is automatically retired, allowing the new sign-in without administrative lockout.
+- **Single Active Session Enforcement (Exclusive Terminal Lock)**: Strictly restricts a user account from concurrent active sessions across multiple terminals. On login, if an active session exists that was active within the idle window (`SESSION_IDLE_TIMEOUT_SEC` = 30 minutes), the second login is rejected with HTTP 409 Conflict (`ACTIVE_SESSION_EXISTS`). If the previous session has been idle for > 30 minutes (e.g. browser closed or computer rebooted), it is automatically retired, allowing the new sign-in without administrative lockout.
 - **Zero Raw Secret Exposure**: Plaintext passwords are never stored; they are hashed using **Argon2id** via `pwdlib`. Both access and refresh tokens are hashed using SHA-256 before storage in session payloads and database tables.
 
 ---
@@ -110,17 +110,17 @@ erDiagram
 ```
 
 ### Role-Based Access Control (RBAC) Mechanics
-- **Permissions**: Defined in [Permission](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L34-L51). Formatted programmatically in [SystemPermission](file:///c:/Users/imper/Documents/xcom/erp/src/shares/enums.py#L43-L62) as `MODULE:RESOURCE:ACTION` (e.g., `AUTHENTICATION:USER:CREATE`).
-- **Roles**: Groups of permissions defined in [Role](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L77-L101) (e.g., `SUPER_ADMIN`, `ADMIN`, `STAFF_USER`).
-- **Junction Tables**: [RolePermission](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L54-L75) and [UserRole](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L103-L119) implement M:N relationships loaded via `lazy="selectin"`.
+- **Permissions**: Defined in [Permission](/xcom/erp/src/modules/authentication/auth_model.py#L34-L51). Formatted programmatically in [SystemPermission](/xcom/erp/src/shares/enums.py#L43-L62) as `MODULE:RESOURCE:ACTION` (e.g., `AUTHENTICATION:USER:CREATE`).
+- **Roles**: Groups of permissions defined in [Role](/xcom/erp/src/modules/authentication/auth_model.py#L77-L101) (e.g., `SUPER_ADMIN`, `ADMIN`, `STAFF_USER`).
+- **Junction Tables**: [RolePermission](/xcom/erp/src/modules/authentication/auth_model.py#L54-L75) and [UserRole](/xcom/erp/src/modules/authentication/auth_model.py#L103-L119) implement M:N relationships loaded via `lazy="selectin"`.
 
 ### Attribute-Based Access Control (ABAC) Mechanics
 In addition to RBAC roles, every access decision evaluates contextual attributes:
-1. **User Status Attribute** ([UserStatus](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L26-L32)): Access is denied unless `user.status == UserStatus.ACTIVE` ([auth_service.py:L166-L170](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L166-L170)).
-2. **Temporal Ban Expiration Attribute**: Evaluated dynamically at runtime ([auth_service.py:L153-L165](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L153-L165)). If `banned_until_time` has expired, the system automatically restores a `SUSPENDED` account back to `ACTIVE`.
-3. **Granular IP + Username Lockout Attribute**: Pre-authentication brute-force check ([auth_service.py:L144-L151](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L144-L151)). Checks Redis key `failed_login_block:{ip}:{username}`. 5 consecutive failed attempts from the same IP set a 15-minute lockout for that specific IP-username pair.
-4. **Environment Attributes**: Client IP and User-Agent are recorded in `session.sessions` ([session_model.py:L35-L36](file:///c:/Users/imper/Documents/xcom/erp/src/modules/session/session_model.py#L35-L36)).
-5. **Profile Completion Attribute**: Enforced dynamically by dependency `require_user_profile_and_get_id` ([current_user.py:L70-L108](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py#L70-L108)), returning HTTP 403 `PROFILE_SETUP_REQUIRED` if false.
+1. **User Status Attribute** ([UserStatus](/xcom/erp/src/modules/authentication/auth_model.py#L26-L32)): Access is denied unless `user.status == UserStatus.ACTIVE` ([auth_service.py:L166-L170](/xcom/erp/src/modules/authentication/auth_service.py#L166-L170)).
+2. **Temporal Ban Expiration Attribute**: Evaluated dynamically at runtime ([auth_service.py:L153-L165](/xcom/erp/src/modules/authentication/auth_service.py#L153-L165)). If `banned_until_time` has expired, the system automatically restores a `SUSPENDED` account back to `ACTIVE`.
+3. **Granular IP + Username Lockout Attribute**: Pre-authentication brute-force check ([auth_service.py:L144-L151](/xcom/erp/src/modules/authentication/auth_service.py#L144-L151)). Checks Redis key `failed_login_block:{ip}:{username}`. 5 consecutive failed attempts from the same IP set a 15-minute lockout for that specific IP-username pair.
+4. **Environment Attributes**: Client IP and User-Agent are recorded in `session.sessions` ([session_model.py:L35-L36](/xcom/erp/src/modules/session/session_model.py#L35-L36)).
+5. **Profile Completion Attribute**: Enforced dynamically by dependency `require_user_profile_and_get_id` ([current_user.py:L70-L108](/xcom/erp/src/dependencies/current_user.py#L70-L108)), returning HTTP 403 `PROFILE_SETUP_REQUIRED` if false.
 
 ---
 
@@ -259,7 +259,7 @@ sequenceDiagram
 
 ## 5. Session Cache Payload Specification
 
-The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-contained JSON session payload ([auth_service.py:L499-L527](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L499-L527)):
+The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-contained JSON session payload ([auth_service.py:L499-L527](/xcom/erp/src/modules/authentication/auth_service.py#L499-L527)):
 
 | Field Name | Type | Description & Purpose |
 | :--- | :--- | :--- |
@@ -282,14 +282,14 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 
 ### 1. User Registration
 - **Endpoint**: `POST /api/public/auth/registration`
-- **Location**: [auth_router.py:L20-L32](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L20-L32)
+- **Location**: [auth_router.py:L20-L32](/xcom/erp/src/modules/authentication/auth_router.py#L20-L32)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Input**: `UserRegistrationRequest` (`username`, `email`, `plain_password`)
 - **Behavior**: Standardizes email to lowercase, checks email uniqueness, hashes password with Argon2id, creates `User` record with default `status = UserStatus.PENDING`. Unchanged.
 
 ### 2. User Authentication & Token Grant
 - **Endpoint**: `POST /api/public/auth/auth-tokens`
-- **Location**: [auth_router.py:L37-L91](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L37-L91)
+- **Location**: [auth_router.py:L37-L91](/xcom/erp/src/modules/authentication/auth_router.py#L37-L91)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Input**: `UserAuthenticationRequest` (`username`, `plain_password`)
 - **Behavior**: Checks IP+Username Redis lockout, verifies Argon2id password, generates dual JWTs, computes SHA-256 token hashes, persists session in PostgreSQL & Redis, returns payload and sets HTTP-Only cookies.
@@ -299,7 +299,7 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 
 ### 3. Refresh Tokens (RTR Rotation)
 - **Endpoint**: `POST /api/public/auth/refresh-token`
-- **Location**: [auth_router.py:L95-L133](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L95-L133)
+- **Location**: [auth_router.py:L95-L133](/xcom/erp/src/modules/authentication/auth_router.py#L95-L133)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Behavior**: Extracts `refresh_token` from HTTP-Only cookie, verifies JWT signature, validates against Redis cache (`sessions:{sid}:user:{uid}`), verifies token hash for theft detection, rotates **both** access and refresh tokens, updates Redis payload instantly, dispatches background task `_sync_session_rotation_db`, and returns new rotated cookies.
 
@@ -308,8 +308,8 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 ## 7. Security Mechanics & Technicalities
 
 ### Cryptographic Algorithms
-1. **Password Hashing**: Argon2id via `pwdlib.PasswordHash.recommended()` ([auth_service.py:L33](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L33)). Hashing/verification offloaded to thread pool via `asyncio.to_thread` ([auth_service.py:L70](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L70), [L173](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L173)).
-2. **Token Hashing**: SHA-256 via `hashlib.sha256(token.encode()).hexdigest()` for both access tokens ([auth_service.py:L211](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L211)) and refresh tokens ([auth_service.py:L210](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L210)).
+1. **Password Hashing**: Argon2id via `pwdlib.PasswordHash.recommended()` ([auth_service.py:L33](/xcom/erp/src/modules/authentication/auth_service.py#L33)). Hashing/verification offloaded to thread pool via `asyncio.to_thread` ([auth_service.py:L70](/xcom/erp/src/modules/authentication/auth_service.py#L70), [L173](/xcom/erp/src/modules/authentication/auth_service.py#L173)).
+2. **Token Hashing**: SHA-256 via `hashlib.sha256(token.encode()).hexdigest()` for both access tokens ([auth_service.py:L211](/xcom/erp/src/modules/authentication/auth_service.py#L211)) and refresh tokens ([auth_service.py:L210](/xcom/erp/src/modules/authentication/auth_service.py#L210)).
 3. **Dual JWT Keys**: Access and Refresh tokens use independent secret keys (`settings.ACCESS_JWT_SECRET_KEY` and `settings.REFRESH_JWT_SECRET_KEY`) encoded using HMAC-SHA256 (`HS256`).
 
 ---
@@ -317,7 +317,7 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 ## 8. Developer & AI Agent Quick Reference Guide
 
 ### Protecting a New Endpoint
-To protect a new private endpoint, rely on [current_user.py](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py) which automatically uses pre-verified claims from `request.state` injected by [JWTValidator](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L16-L183):
+To protect a new private endpoint, rely on [current_user.py](/xcom/erp/src/dependencies/current_user.py) which automatically uses pre-verified claims from `request.state` injected by [JWTValidator](/xcom/erp/src/middlewares/jwt_validator.py#L16-L183):
 
 ```python
 from fastapi import APIRouter, Depends
@@ -338,7 +338,7 @@ async def get_profile_resource(user_id: UUID = Depends(require_user_profile_and_
 ```
 
 ### Key Configuration Variables
-Defined in [settings.py](file:///c:/Users/imper/Documents/xcom/erp/src/core/settings.py):
+Defined in [settings.py](/xcom/erp/src/core/settings.py):
 - `ACCESS_JWT_SECRET_KEY`: Secret string for access token signing.
 - `REFRESH_JWT_SECRET_KEY`: Secret string for refresh token signing.
 - `ACCESS_JWT_EXPIRY_SEC`: Access token lifespan (e.g. 900s / 15 mins).
@@ -348,7 +348,7 @@ Defined in [settings.py](file:///c:/Users/imper/Documents/xcom/erp/src/core/sett
 
 ---
 
-## 9. Session Lifecycle & Administrative Overrides (BIR CAS Annex B Item 11.b)
+## 9. Session Lifecycle & Administrative Overrides
 
 The session module (`src/modules/session/`) manages individual terminal sessions and provides administrative overrides for active connections:
 
@@ -356,36 +356,38 @@ The session module (`src/modules/session/`) manages individual terminal sessions
 1. **User Own Logout**: `POST /api/private/session/logout`
    - Gracefully ends the calling user's active session in PostgreSQL (`is_active = False`) and evicts the session cache from Redis.
    - Clears HTTP-Only authentication cookies (`access_token`, `refresh_token`).
-2. **Admin List All Active Sessions Across All Users**: `GET /api/private/admin/sessions`
-   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)`.
-   - Returns all active terminal sessions enterprise-wide joined with user identity and profile data (`user_id`, `username`, `email`, `roles`, `full_name`, IP address, user-agent, creation date, and last active timestamp) for centralized monitoring, audit, and client-side searching.
-3. **Admin Force Logout by Session UUID**: `DELETE /api/private/admin/sessions/{session_id}`
-   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)`.
+   - Protected by `rate_limit_by_user(20, 60)`.
+2. **Admin List All Active Sessions Across All Users**: `GET /api/private/admin/sessions/active-sessions`
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `rate_limit_by_user(30, 60)`.
+   - Returns all active terminal sessions enterprise-wide joined with user identity and profile data (`user_id`, `user_code`, `username`, `email`, `roles`, `full_name`, IP address, user-agent, creation date, and last active timestamp) for centralized monitoring, audit, and client-side searching.
+3. **Admin Force Logout by Session UUID**: `DELETE /api/private/admin/sessions/{session_id}/terminate`
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `rate_limit_by_user(30, 60)`.
    - Immediately revokes a target terminal session. Any subsequent request from that terminal receives an immediate 401 Unauthorized.
 4. **Admin Enterprise-Wide Mass Logout with Sudo Verification**: `POST /api/private/admin/sessions/terminate-all`
-   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `verify_sudo_credential`.
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)`, `require_sudo_credential`, and `rate_limit_by_user(5, 300)`.
    - Requires the executing administrator to supply their own `admin_password` in the JSON request body.
    - Prevents unauthorized mass evictions from unattended administrator workstations.
    - Emergency killswitch that bulk invalidates ALL active sessions across all users in PostgreSQL and purges all related keys from Redis.
 
 ---
 
-## 10. Administrative User Approval Lifecycle (BIR CAS Annex B Item 11.a)
+## 10. Administrative User Approval Lifecycle
 
-Under BIR CAS regulations, newly registered accounts cannot immediately access financial modules or records without prior administrative authorization:
+In enterprise governance, newly registered accounts cannot immediately access operational modules or records without prior administrative vetting and role assignment:
 
 ### Workflow
-1. **Public Registration**: `POST /api/public/auth/registration`
+1. **Public Registration**: `POST /api/public/auth/register`
    - User account is created with `status = PENDING`.
-   - Login attempts are blocked with `HTTP 403 Forbidden` ("Account is not in active status").
-2. **Pending Users Inspection**: `GET /api/private/admin/users/pending`
-   - Guarded by `require_permission(SystemPermission.AUTHENTICATION_USER_READ)`.
+   - Protected by `rate_limit_by_ip(3, 180)` against account spam.
+   - Immediate login attempts are blocked with `HTTP 403 Forbidden` ("Account is not in active status").
+2. **Pending Users Inspection**: `GET /api/private/admin/users/pending-registrations`
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `rate_limit_by_user(30, 60)`.
    - Returns registered users awaiting administrative vetting.
 3. **Account Approval**: `POST /api/private/admin/users/{user_id}/approve`
-   - Guarded by `require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_ACCEPT)`.
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `rate_limit_by_user(20, 60)`.
    - Transitions status to `ACTIVE` and assigns an initial system role (default: `STAFF_USER`).
 4. **Account Rejection & Soft Deactivation**: `POST /api/private/admin/users/{user_id}/reject`
-   - Guarded by `require_permission(SystemPermission.AUTHENTICATION_REGISTRATION_REJECT)`.
+   - Guarded by `require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)` and `rate_limit_by_user(20, 60)`.
    - Sets status to `INACTIVE`.
-   - Physical SQL `DELETE` is prohibited to uphold the 10-year immutable audit trail requirement mandated by BIR regulations.
+   - Physical SQL `DELETE` is prohibited to uphold non-repudiation and enterprise audit trail retention requirements.
 

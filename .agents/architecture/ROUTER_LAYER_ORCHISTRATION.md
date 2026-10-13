@@ -55,7 +55,7 @@ HTTP Request
 
 ### 2.1 Public Endpoints (`/api/public/*`)
 - **No Token Required**: Bypasses `JWTValidator`. Never assumes `request.state.user_id` exists.
-- **Rate Limiting**: Public endpoints must be guarded with `rate_limit_by_ip()` to mitigate brute force and credential stuffing.
+- **Rate Limiting**: Public endpoints must be guarded with `rate_limit_by_ip()` while private endpoints with `rate_limit_by_user()` to mitigate brute force and credential stuffing.
 - **Secret Header Guard**: Public onboarding/gateway endpoints may require `SECRET_HEADER_NAME` verification.
 
 ### 2.2 Private Endpoints (`/api/private/*`)

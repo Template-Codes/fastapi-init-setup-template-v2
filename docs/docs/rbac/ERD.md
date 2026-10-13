@@ -195,11 +195,11 @@ Point-in-time snapshot capturing the user's effective permissions, direct permis
 
 ---
 
-## 3. Statutory & Security Invariants
+## 3. Governance & Security Invariants
 
 1. **Dual Authorization (Maker-Checker)**:
    - Changes to privileged roles or direct user grants must be committed through `rbac_change_requests` where `requested_by_id != reviewed_by_id`.
 2. **Immutability of Snapshot Records**:
-   - `role_permission_snapshots` and `user_rbac_snapshots` are insert-only tables with no update or delete endpoints, providing tamper-resistant proof of historic access rights for BIR and SOX auditors.
+   - `role_permission_snapshots` and `user_rbac_snapshots` are insert-only tables with no update or delete endpoints, providing tamper-resistant proof of historic access rights for internal security auditors and enterprise compliance frameworks.
 3. **Audit Trail Retention (`ON DELETE SET NULL`)**:
    - `assigned_by_id`, `reviewed_by_id`, and `changed_by_id` remain preserved even if the administrator's account is subsequently deleted.
