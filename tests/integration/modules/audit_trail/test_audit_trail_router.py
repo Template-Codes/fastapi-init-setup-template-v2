@@ -10,7 +10,7 @@ from clients.redis import redis_async_client
 from core.settings import settings
 from modules.audit_trail.audit_trail_model import AuditLog
 from modules.authentication.auth_model import User, UserStatus
-from shares.enums import ActionName, AuditSeverity
+from shares.enums import ActionName, AuditSeverity, RoleName
 from utils.maintain_cache_key import MaintainCacheKeyUtils
 
 
@@ -77,7 +77,7 @@ async def test_audit_logs_forbidden_for_non_admin_user(
     session_id = uuid.uuid4()
     token = _create_jwt_token(user_id, session_id)
     await _setup_session_and_roles(
-        async_cache, user_id, session_id, token, roles=["PUBLIC_USER"]
+        async_cache, user_id, session_id, token, roles=[RoleName.PUBLIC_USER.value]
     )
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -97,7 +97,7 @@ async def test_audit_logs_list_and_filter_success_for_admin(
     session_id = uuid.uuid4()
     token = _create_jwt_token(admin_id, session_id)
     await _setup_session_and_roles(
-        async_cache, admin_id, session_id, token, roles=["ADMIN"]
+        async_cache, admin_id, session_id, token, roles=[RoleName.ADMIN.value]
     )
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -177,7 +177,7 @@ async def test_audit_log_get_by_id_success_and_not_found(
     session_id = uuid.uuid4()
     token = _create_jwt_token(admin_id, session_id)
     await _setup_session_and_roles(
-        async_cache, admin_id, session_id, token, roles=["SUPER_ADMIN"]
+        async_cache, admin_id, session_id, token, roles=[RoleName.SUPER_ADMIN.value]
     )
 
     headers = {"Authorization": f"Bearer {token}"}

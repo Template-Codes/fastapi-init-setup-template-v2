@@ -17,8 +17,19 @@ class AuditTrailRepository(BaseRepository[AuditLog]):
     def __init__(self, db: AsyncSession = Depends(get_async_db)):
         super().__init__(db, AuditLog)
 
-    async def get_by_id(self, id: UUID) -> Optional[AuditLog]:
-        """Fetch audit log by UUID (accounting for composite primary key)."""
+    async def get_by_id(self, id: UUID) -> Optional[AuditLog]:  # type: ignore[override]
+        """
+        Fetch audit log by UUID only.
+
+        IMPORTANT — Composite PK Guard:
+        AuditLog has a composite primary key (id, created_at) to support
+        PostgreSQL range partitioning. The inherited BaseRepository.get_by_id()
+        uses db.get(model, id) which requires the *full* composite key tuple;
+        passing only the UUID would silently return None for every existing row.
+
+        This override intentionally uses SELECT WHERE on the id column alone.
+        Never replace this with super().get_by_id() or db.get(AuditLog, id).
+        """
         stmt = select(AuditLog).where(AuditLog.id == id)
         result = await self.db.execute(stmt)
         return result.scalars().first()

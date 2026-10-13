@@ -102,6 +102,21 @@ async def db_session():
     await engine.dispose()
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def flush_test_redis(prepare_test_database):
+    """
+    Flush the test Redis DB once before the test session starts.
+    Prevents rate limit counters and session keys from a previous run
+    bleeding into the current test session.
+    Runs after prepare_test_database to guarantee ordering.
+    """
+    client = aioredis.from_url(TEST_REDIS_URL, decode_responses=True)
+    try:
+        await client.flushdb()
+    finally:
+        await client.aclose()
+
+
 @pytest_asyncio.fixture
 async def async_cache():
     """Provide a real Redis client connected to TEST_REDIS_URL."""

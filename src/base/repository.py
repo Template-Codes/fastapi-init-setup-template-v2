@@ -17,7 +17,16 @@ class BaseRepository(Generic[ModelType]):
 
     @property
     def pk_column(self) -> Any:
-        """Dynamically retrieves the primary key column of the model."""
+        """
+        Returns the first primary key column of the model for use in get_by_ids().
+
+        NOTE — Composite PK Models:
+        This always returns primary_key[0]. For models with a composite primary key
+        (e.g. AuditLog with (id, created_at)), this coincidentally works only when
+        the lookup column is the first key in the PK tuple definition order.
+        If your model has a composite PK where the lookup target is NOT index 0,
+        you MUST override get_by_id() and get_by_ids() in the subclass repository.
+        """
         mapper_inspection = inspect(self.model)
         if not mapper_inspection or not mapper_inspection.primary_key:
             raise ValueError(f"Model {self.model.__name__} must define at least one primary key.")

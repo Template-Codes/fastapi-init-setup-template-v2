@@ -56,6 +56,15 @@ class AuditTrailService:
         resource_val = resource.value if isinstance(resource, ResourceName) else str(resource)
         module_val = module.value if isinstance(module, ModuleName) else str(module)
 
+        # Auto-compute changed_fields from symmetric diff of old and new values
+        computed_changed_fields: Optional[list] = None
+        if old_values is not None and new_values is not None:
+            computed_changed_fields = [
+                k
+                for k in set(old_values) | set(new_values)
+                if old_values.get(k) != new_values.get(k)
+            ]
+
         data = {
             "module": module_val,
             "resource": resource_val,
@@ -70,6 +79,7 @@ class AuditTrailService:
             "reason": reason,
             "old_values": old_values,
             "new_values": new_values,
+            "changed_fields": computed_changed_fields,
             "ip_address": ip_address,
             "user_agent": user_agent,
             "request_id": request_id,

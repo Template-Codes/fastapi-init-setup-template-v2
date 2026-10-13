@@ -27,6 +27,10 @@ class AuditLogResponse(BaseSchema):
     target_code: Optional[str] = None
     old_values: Optional[Dict[str, Any]] = None
     new_values: Optional[Dict[str, Any]] = None
+    changed_fields: Optional[List[str]] = None
+    is_reversal: bool = False
+    reversal_for_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     request_id: Optional[str] = None
