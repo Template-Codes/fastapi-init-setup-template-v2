@@ -1,6 +1,6 @@
 # Service Layer & Domain Orchestration Standards
 
-This document establishes architectural standards for the Service Layer across the USSCI ERP backend. The Service Layer acts as the central business coordinator, enforcing domain invariants, managing cross-repository workflows, and maintaining thin, decoupled routers.
+This document establishes architectural standards for the Service Layer across the XCOM ERP backend. The Service Layer acts as the central business coordinator, enforcing domain invariants, managing cross-repository workflows, and maintaining thin, decoupled routers.
 
 ---
 

@@ -40,38 +40,73 @@ class DummySeeder(BaseSeeder):
         hashed_pwd = self.pwd_context.hash(dummy_password)
 
         dummy_users = [
+            # 1 Admin (complete requirement)
             {
-                "user_code": "USR-00004",
-                "username": "pending_user",
-                "email": "pending@system.local",
-                "status": UserStatus.PENDING,
-                "role_name": RoleName.STAFF_USER.value,
-                "first_name": "Pending",
-                "last_name": "TestUser",
-                "gender": UserGender.MALE,
-                "cellphone_number": "+12345678901",
-            },
-            {
-                "user_code": "USR-00003",
-                "username": "staff_user",
-                "email": "staff@system.local",
-                "status": UserStatus.ACTIVE,
-                "role_name": RoleName.STAFF_USER.value,
-                "first_name": "John",
-                "last_name": "Doe",
-                "gender": UserGender.MALE,
-                "cellphone_number": "+12345678902",
-            },
-            {
-                "user_code": "USR-00002",
-                "username": "admin_user",
-                "email": "admin_test@system.local",
+                "username": "admin1",
+                "email": "admin1@system.local",
                 "status": UserStatus.ACTIVE,
                 "role_name": RoleName.ADMIN.value,
-                "first_name": "Jane",
-                "last_name": "Smith",
-                "gender": UserGender.FEMALE,
-                "cellphone_number": "+12345678903",
+                "profile": {
+                    "first_name": "Admin",
+                    "last_name": "One",
+                    "gender": UserGender.FEMALE,
+                    "cellphone_number": "+639170000002",
+                    "street": "456 Corporate Ave",
+                    "city": "Valenzuela",
+                    "province_state": "Metro Manila",
+                    "postal_code": "1440",
+                    "country": "Philippines",
+                },
+            },
+            # 2 Staff users (complete requirements)
+            {
+                "username": "staff1",
+                "email": "staff1@system.local",
+                "status": UserStatus.ACTIVE,
+                "role_name": RoleName.STAFF_USER.value,
+                "profile": {
+                    "first_name": "Staff",
+                    "last_name": "One",
+                    "gender": UserGender.MALE,
+                    "cellphone_number": "+639170000003",
+                    "street": "789 Factory Rd",
+                    "city": "Valenzuela",
+                    "province_state": "Metro Manila",
+                    "postal_code": "1440",
+                    "country": "Philippines",
+                },
+            },
+            {
+                "username": "staff2",
+                "email": "staff2@system.local",
+                "status": UserStatus.ACTIVE,
+                "role_name": RoleName.STAFF_USER.value,
+                "profile": {
+                    "first_name": "Staff",
+                    "last_name": "Two",
+                    "gender": UserGender.FEMALE,
+                    "cellphone_number": "+639170000004",
+                    "street": "790 Factory Rd",
+                    "city": "Valenzuela",
+                    "province_state": "Metro Manila",
+                    "postal_code": "1440",
+                    "country": "Philippines",
+                },
+            },
+            # 2 Public users (incomplete requirements - no profile record)
+            {
+                "username": "public1",
+                "email": "public1@system.local",
+                "status": UserStatus.ACTIVE,
+                "role_name": RoleName.PUBLIC_USER.value,
+                "profile": None,
+            },
+            {
+                "username": "public2",
+                "email": "public2@system.local",
+                "status": UserStatus.PENDING,
+                "role_name": RoleName.PUBLIC_USER.value,
+                "profile": None,
             },
         ]
 
@@ -82,7 +117,6 @@ class DummySeeder(BaseSeeder):
 
             if not existing_user:
                 new_user = User(
-                    user_code=u_data["user_code"],
                     username=u_data["username"],
                     email=u_data["email"],
                     password_hash=hashed_pwd,
@@ -97,20 +131,30 @@ class DummySeeder(BaseSeeder):
                     ur = UserRole(user_id=new_user.id, role_id=role_obj.id)
                     session.add(ur)
 
-                # Create profile
-                user_profile = UserProfile(
-                    user_id=new_user.id,
-                    first_name=u_data["first_name"],
-                    last_name=u_data["last_name"],
-                    gender=u_data["gender"],
-                    cellphone_number=u_data["cellphone_number"],
-                    country="Philippines",
-                )
-                session.add(user_profile)
-                await session.flush()
+                # Create profile if complete requirements provided
+                p_info = u_data["profile"]
+                if p_info:
+                    user_profile = UserProfile(
+                        user_id=new_user.id,
+                        first_name=p_info["first_name"],
+                        last_name=p_info["last_name"],
+                        gender=p_info["gender"],
+                        cellphone_number=p_info["cellphone_number"],
+                        street=p_info.get("street"),
+                        city=p_info.get("city"),
+                        province_state=p_info.get("province_state"),
+                        postal_code=p_info.get("postal_code"),
+                        country=p_info.get("country", "Philippines"),
+                    )
+                    session.add(user_profile)
+                    await session.flush()
+                    profile_status = "profile: COMPLETE"
+                else:
+                    profile_status = "profile: INCOMPLETE (no profile)"
 
                 logger.info(
-                    f"Seeded dummy user: {u_data['username']} [{u_data['status'].value}] with role {u_data['role_name']}"
+                    f"Seeded user: {u_data['username']} [{u_data['status'].value}] "
+                    f"role: {u_data['role_name']}, {profile_status}"
                 )
             else:
                 logger.info(f"Dummy user already exists: {u_data['username']}")

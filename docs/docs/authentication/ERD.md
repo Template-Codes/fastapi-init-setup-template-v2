@@ -1,6 +1,6 @@
 # Authentication Module - Entity Relationship Diagram (ERD)
 
-This document details the database architecture of the **Authentication (`auth`)** module, which serves as the central identity anchor for the USSCI ERP & CAS platform.
+This document details the database architecture of the **Authentication (`auth`)** module, which serves as the central identity anchor for the XCOM ERP & CAS platform.
 
 ---
 

@@ -2,6 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from core.settings import settings
+from dependencies.current_user import require_user_profile_and_get_id
 from dependencies.rate_limit import rate_limit_by_ip
 from dependencies.rbac_guard import require_role
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -154,7 +155,10 @@ async def refresh_tokens(
     summary="List all user registrations pending administrator approval.",
     status_code=status.HTTP_200_OK,
     response_model=List[PendingUserResponse],
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    ],
 )
 async def list_pending_user_registrations(
     service: AuthenticationService = Depends(),
@@ -169,7 +173,10 @@ async def list_pending_user_registrations(
     summary="Approve pending user registration and transition status to ACTIVE.",
     status_code=status.HTTP_200_OK,
     response_model=UserApprovalActionResponse,
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    ],
 )
 async def approve_user_registration(
     user_id: UUID,
@@ -187,7 +194,10 @@ async def approve_user_registration(
     summary="Reject pending user registration and transition status to INACTIVE.",
     status_code=status.HTTP_200_OK,
     response_model=UserApprovalActionResponse,
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    ],
 )
 async def reject_user_registration(
     user_id: UUID,

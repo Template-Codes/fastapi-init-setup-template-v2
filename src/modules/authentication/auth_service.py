@@ -285,34 +285,6 @@ class AuthenticationService:
             else:
                 user_profile_payload = UserProfileResponse.model_validate(user_profile)
             
-            # == SINGLE ACTIVE SESSION CHECK (EXCLUSIVE LOCK) ==
-            active_session = await self._user_session_repo.get_active_session_by_user_id(user_id)
-            if active_session:
-                last_active = (
-                    active_session.last_active_at
-                    if active_session.last_active_at.tzinfo
-                    else active_session.last_active_at.replace(tzinfo=timezone.utc)
-                )
-                idle_limit = timedelta(seconds=settings.SESSION_IDLE_TIMEOUT_SEC)
-                is_recently_active = (now - last_active) <= idle_limit
-
-                if is_recently_active:
-                    logger.warning(
-                        f"Concurrent login blocked for user {username}: Active session {active_session.id} exists."
-                    )
-                    raise ConflictException(
-                        message="Unable to complete sign in. An active session is currently in progress for this account.",
-                        error_code="ACTIVE_SESSION_EXISTS"
-                    )
-                else:
-                    logger.info(
-                        f"Retiring stale/abandoned session {active_session.id} for user {username} "
-                        f"(idle > {settings.SESSION_IDLE_TIMEOUT_SEC}s)."
-                    )
-                    await self._user_session_repo.deactivate_session_by_id(active_session.id)
-                    stale_key = self._cache_utils.create_cache_key(str(active_session.id), str(user_id))
-                    stale_name = self._cache_utils.create_cache_name(str(user_id))
-                    await self._session_cache_life_cycle(key=stale_key, name=stale_name, intent="delete")
 
             # == GENERATE AUTHENTICATION TOKENS ==
             logger.info("Generation of access and refresh tokens...")

@@ -136,8 +136,14 @@ class SystemSeeder(BaseSeeder):
         sa_email = settings.SEED_SUPERADMIN_EMAIL
         sa_password = settings.SEED_SUPERADMIN_PASSWORD
 
-        stmt = select(User).options(selectinload(User.roles)).where(
-            (User.username == sa_username) | (User.email == sa_email)
+        stmt = (
+            select(User)
+            .options(selectinload(User.roles), selectinload(User.profile))
+            .where(
+                (User.username == sa_username)
+                | (User.email == sa_email)
+                | (User.user_code == "USR-00001")
+            )
         )
         res = await session.execute(stmt)
         existing_sa = res.scalar_one_or_none()
@@ -145,7 +151,6 @@ class SystemSeeder(BaseSeeder):
         if not existing_sa:
             hashed_pwd = self.pwd_context.hash(sa_password)
             sa_user = User(
-                user_code="USR-00001",
                 username=sa_username,
                 email=sa_email,
                 password_hash=hashed_pwd,
@@ -158,13 +163,17 @@ class SystemSeeder(BaseSeeder):
             ur = UserRole(user_id=sa_user.id, role_id=roles_map[RoleName.SUPER_ADMIN.value].id)
             session.add(ur)
 
-            # Create UserProfile for Super Admin
+            # Create UserProfile for Super Admin (Complete requirement)
             sa_profile = UserProfile(
                 user_id=sa_user.id,
-                first_name="System",
-                last_name="SuperAdmin",
+                first_name="Super",
+                last_name="Admin",
                 gender=UserGender.OTHERS,
-                cellphone_number="+0000000000",
+                cellphone_number="+639170000001",
+                street="123 Corporate Ave",
+                city="Valenzuela",
+                province_state="Metro Manila",
+                postal_code="1440",
                 country="Philippines",
             )
             session.add(sa_profile)
@@ -174,6 +183,47 @@ class SystemSeeder(BaseSeeder):
                 f"Successfully seeded Super Admin user: {sa_username} ({sa_email}) [Status: ACTIVE]"
             )
         else:
-            logger.info(f"Super Admin user already exists: {sa_username}")
+            # Sync existing user record with current configured settings
+            existing_sa.username = sa_username
+            existing_sa.email = sa_email
+            existing_sa.status = UserStatus.ACTIVE
+
+            # Ensure SUPER_ADMIN role is attached
+            sa_role_id = roles_map[RoleName.SUPER_ADMIN.value].id
+            existing_role_ids = {r.id for r in existing_sa.roles}
+            if sa_role_id not in existing_role_ids:
+                ur = UserRole(user_id=existing_sa.id, role_id=sa_role_id)
+                session.add(ur)
+
+            # Ensure complete profile exists
+            if not existing_sa.profile:
+                sa_profile = UserProfile(
+                    user_id=existing_sa.id,
+                    first_name="Super",
+                    last_name="Admin",
+                    gender=UserGender.OTHERS,
+                    cellphone_number="+639170000001",
+                    street="123 Corporate Ave",
+                    city="Valenzuela",
+                    province_state="Metro Manila",
+                    postal_code="1440",
+                    country="Philippines",
+                )
+                session.add(sa_profile)
+            else:
+                existing_sa.profile.first_name = "Super"
+                existing_sa.profile.last_name = "Admin"
+                existing_sa.profile.gender = UserGender.OTHERS
+                existing_sa.profile.cellphone_number = "+639170000001"
+                existing_sa.profile.street = "123 Corporate Ave"
+                existing_sa.profile.city = "Valenzuela"
+                existing_sa.profile.province_state = "Metro Manila"
+                existing_sa.profile.postal_code = "1440"
+                existing_sa.profile.country = "Philippines"
+
+            await session.flush()
+            logger.info(
+                f"Updated existing Super Admin user: {sa_username} ({sa_email}) [Status: ACTIVE, Profile: COMPLETE]"
+            )
 
         logger.info("--- Completed System Seeding ---")

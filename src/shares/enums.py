@@ -55,6 +55,7 @@ class ModuleName(str, Enum):
     SESSION = "SESSION"
     RBAC = "RBAC"
     SYSTEM = "SYSTEM"
+    AUDIT_TRAIL = "AUDIT_TRAIL"
 
 
 MODULE_DESCRIPTIONS: dict[ModuleName, str] = {
@@ -63,6 +64,7 @@ MODULE_DESCRIPTIONS: dict[ModuleName, str] = {
     ModuleName.SESSION: "Active login sessions, terminals, device tracking, and session revocation.",
     ModuleName.RBAC: "Role-Based Access Control hierarchy, permission catalog, and security assignments.",
     ModuleName.SYSTEM: "Core system health, operational parameters, and configuration services.",
+    ModuleName.AUDIT_TRAIL: "System activity logging, event tracking, and operational audit inspection.",
 }
 
 
@@ -80,6 +82,9 @@ class ResourceName(str, Enum):
     ROLE_PERMISSION = "ROLE_PERMISSION"
     DIRECT_PERMISSION = "DIRECT_PERMISSION"
     CHANGE_REQUEST = "CHANGE_REQUEST"
+    AUDIT_LOG = "AUDIT_LOG"
+    EXPORT_JOB = "EXPORT_JOB"
+    INTEGRITY_CHECK = "INTEGRITY_CHECK"
 
 
 # Detailed descriptions for client UI and administrative metadata
@@ -93,52 +98,60 @@ RESOURCE_DESCRIPTIONS: dict[ResourceName, str] = {
     ResourceName.ROLE_PERMISSION: "Assignment mapping granting specific permissions to security roles.",
     ResourceName.DIRECT_PERMISSION: "Direct custom user permission grants and explicit denials outside role defaults.",
     ResourceName.CHANGE_REQUEST: "Dual-authorization RBAC change requests requiring multi-tier hierarchical approval.",
+    ResourceName.AUDIT_LOG: "Enterprise transaction and operational activity log stream.",
+    ResourceName.EXPORT_JOB: "Asynchronous and on-demand audit log export tasks.",
+    ResourceName.INTEGRITY_CHECK: "Log integrity verification and tamper detection checkpoints.",
 }
 
 
 class ActionName(str, Enum):
     """
     Actions performable on resources.
-    Incorporates standard CRUD operations alongside BIR CAS statutory action terminologies
-    (BIR Annex B Items 10.b, 10.c, 71; RMC No. 98-2026).
+    Standard CRUD operations alongside administrative lifecycle operations.
     """
     # Standard CRUD & Administrative Lifecycle
-    CREATE = "CREATE"          # Create draft or unposted records
+    CREATE = "CREATE"          # Create draft or active records
     READ = "READ"              # Retrieve, inspect, or search records
-    UPDATE = "UPDATE"          # Modify unposted/draft records before final posting
-    DELETE = "DELETE"          # Purge draft/unposted records
+    UPDATE = "UPDATE"          # Modify records
+    DELETE = "DELETE"          # Purge or soft-delete records
     ACCEPT = "ACCEPT"          # Approve registration or workflow state
-    REJECT = "REJECT"          # Decline or reject registration or unposted draft
+    REJECT = "REJECT"          # Decline or reject registration or workflow state
+    APPROVE = "APPROVE"        # General administrative approval action
     ASSIGN = "ASSIGN"          # Assign role or permission links
     REVOKE = "REVOKE"          # Revoke assigned privileges or invalidate sessions
     GRANT = "GRANT"            # Grant specific privileges
+    EXPORT = "EXPORT"          # Export records or report data
 
-    # BIR CAS Statutory Actions (Annex B)
-    POST = "POST"              # Immutably finalize & post transaction into Books of Accounts (Annex B Item 10.b, 10.c)
-    VOID = "VOID"              # Void a posted transaction via reversing journal entries (Annex B Item 10.c)
-    VOIDED = "VOIDED"          # Statutory audit tag for voided transactions
-    REPRINT = "REPRINT"        # Produce duplicate invoice/receipt with mandatory 'REPRINT' watermark (Annex B Line 71)
-    TRANSMIT = "TRANSMIT"      # Auto-transmit e-invoice payload to BIR EIS API (RMC 98-2026)
-    GENERATE = "GENERATE"      # Generate official Books of Accounts / BIR tax certificates (Annex B Item 10.d, RR 9-2009)
+    # Authentication & Security Lifecycle
+    LOGIN = "LOGIN"                    # Successful user authentication
+    FAILED_LOGIN = "FAILED_LOGIN"      # Unsuccessful authentication attempt
+    LOGOUT = "LOGOUT"                  # Graceful session termination
+    LOCKOUT = "LOCKOUT"                # Account lockout following repeated failed sign-ons
+    PASSWORD_CHANGE = "PASSWORD_CHANGE"# Password update or reset
+    FORCED_LOGOUT = "FORCED_LOGOUT"    # Administrative session termination
+    ACCESS_DENIED = "ACCESS_DENIED"    # Security event: Attempted access to unauthorized resource
 
 
-# Detailed descriptions for actions including BIR statutory references
+# Detailed descriptions for actions
 ACTION_DESCRIPTIONS: dict[ActionName, str] = {
-    ActionName.CREATE: "Create draft or unposted entity records",
+    ActionName.CREATE: "Create draft or active entity records",
     ActionName.READ: "Retrieve, view, or search records",
-    ActionName.UPDATE: "Modify unposted/draft records before final posting",
-    ActionName.DELETE: "Permanently delete draft/unposted records",
+    ActionName.UPDATE: "Modify existing records",
+    ActionName.DELETE: "Permanently delete or purge records",
     ActionName.ACCEPT: "Approve pending registration or workflow state",
     ActionName.REJECT: "Decline or reject pending registration or workflow",
+    ActionName.APPROVE: "Approve requested administrative action or workflow",
     ActionName.ASSIGN: "Assign role or permission links to an entity",
     ActionName.REVOKE: "Revoke assigned privileges or invalidate sessions",
     ActionName.GRANT: "Grant specific privilege to a role or user",
-    ActionName.POST: "BIR CAS: Immutably post transaction to the Books of Accounts (Annex B Item 10.b, 10.c)",
-    ActionName.VOID: "BIR CAS: Void posted transaction via reversing journal entries (Annex B Item 10.c)",
-    ActionName.VOIDED: "BIR CAS: Historical audit tag for voided transactions",
-    ActionName.REPRINT: "BIR CAS: Reprint receipt/invoice with mandatory REPRINT watermark (Annex B Line 71)",
-    ActionName.TRANSMIT: "BIR EIS: Transmit e-invoice JSON payload to BIR EIS API (RMC 98-2026)",
-    ActionName.GENERATE: "BIR CAS: Generate official books of accounts or tax certificates (RR 9-2009)",
+    ActionName.EXPORT: "Generate and download exported file or data report",
+    ActionName.LOGIN: "Successful user sign-on and session issuance",
+    ActionName.FAILED_LOGIN: "Failed sign-on attempt with invalid credentials",
+    ActionName.LOGOUT: "Explicit user sign-out and session invalidation",
+    ActionName.LOCKOUT: "Account lockout following excessive failed sign-ons",
+    ActionName.PASSWORD_CHANGE: "User credential modification or password reset",
+    ActionName.FORCED_LOGOUT: "Administrative termination or revocation of active sessions",
+    ActionName.ACCESS_DENIED: "Security event: Attempted access to an unauthorized endpoint or resource",
 }
 
 
@@ -176,6 +189,20 @@ class SystemPermission(str, Enum):
     SESSION_SESSION_READ = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.READ.value}"
     SESSION_SESSION_REVOKE = f"{ModuleName.SESSION.value}:{ResourceName.SESSION.value}:{ActionName.REVOKE.value}"
 
+    # Audit Trail Module (BIR CAS Annex B)
+    AUDIT_TRAIL_AUDIT_LOG_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.READ.value}"
+    AUDIT_TRAIL_AUDIT_LOG_EXPORT = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.AUDIT_LOG.value}:{ActionName.EXPORT.value}"
+    AUDIT_TRAIL_INTEGRITY_READ = f"{ModuleName.AUDIT_TRAIL.value}:{ResourceName.INTEGRITY_CHECK.value}:{ActionName.READ.value}"
+
+
+class AuditSeverity(str, Enum):
+    """Statutory and operational log severity levels."""
+    INFO = "INFO"
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
 
 # Bulk Default Permissions per Role (Source of Truth for initial/bulk access)
 ROLE_DEFAULT_PERMISSIONS: dict[RoleName, set[SystemPermission]] = {
@@ -198,6 +225,9 @@ ROLE_DEFAULT_PERMISSIONS: dict[RoleName, set[SystemPermission]] = {
         SystemPermission.PROFILE_USER_UPDATE,
         SystemPermission.SESSION_SESSION_READ,
         SystemPermission.SESSION_SESSION_REVOKE,
+        SystemPermission.AUDIT_TRAIL_AUDIT_LOG_READ,
+        SystemPermission.AUDIT_TRAIL_AUDIT_LOG_EXPORT,
+        SystemPermission.AUDIT_TRAIL_INTEGRITY_READ,
     },
     RoleName.SUPER_ADMIN: set(SystemPermission),
     RoleName.PUBLIC_USER: set(),

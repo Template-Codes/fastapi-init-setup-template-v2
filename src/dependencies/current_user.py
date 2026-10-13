@@ -79,6 +79,10 @@ async def require_user_profile_and_get_id(
     Falls back to PostgreSQL query on cache miss and populates Redis.
     Raises HTTP 403 Forbidden if profile is not completed.
     """
+    if settings.ENVIRONMENT != "prod":
+        logger.warning("Profile completion check skipped for non-production environment.")
+        return user_id
+
     cache_key = cache_utils.get_profile_completion_key(user_id)
     try:
         cached_val = await cache_utils.async_cache.get(name=cache_key)

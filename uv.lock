@@ -1992,7 +1992,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ussci-erp"
+name = "xcom"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

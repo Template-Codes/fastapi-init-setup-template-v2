@@ -28,7 +28,7 @@ from modules.authentication import auth_model  # noqa: F401
 from modules.rbac import rbac_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
-from modules.eis import eis_model  # noqa: F401
+from modules.audit_trail import audit_trail_model  # noqa: F401
 
 # Derive test database URL using TEST_DATABASE_URL
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", settings.TEST_DATABASE_URL or "")
@@ -43,15 +43,16 @@ TEST_REDIS_URL = os.getenv("TEST_REDIS_URL", settings.TEST_REDIS_URL or "redis:/
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def prepare_test_database():
-    """Ensure schemas ('auth', 'profile', 'session') and tables exist on TEST_DATABASE_URL before running integration tests."""
+    """Ensure schemas ('auth', 'profile', 'session', 'audit_trail') and tables exist on TEST_DATABASE_URL before running integration tests."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS auth"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS rbac"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS profile"))
         await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS session"))
-        await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS eis"))
+        await conn.execute(sa.text("CREATE SCHEMA IF NOT EXISTS audit_trail"))
         await conn.execute(sa.text("CREATE SEQUENCE IF NOT EXISTS auth.user_code_seq START WITH 1 INCREMENT BY 1"))
+        await conn.execute(sa.text("CREATE SEQUENCE IF NOT EXISTS audit_trail.audit_seq START WITH 1 INCREMENT BY 1"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(sa.text("""
             DO $$

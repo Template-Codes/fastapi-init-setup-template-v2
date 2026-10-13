@@ -1,6 +1,6 @@
 # Pytest Async & Quality Assurance Standards
 
-This document establishes the testing architecture, fixture conventions, transaction rollback isolation, and edge-case testing standards for the USSCI ERP test suite.
+This document establishes the testing architecture, fixture conventions, transaction rollback isolation, and edge-case testing standards for the XCOM ERP test suite.
 
 ---
 

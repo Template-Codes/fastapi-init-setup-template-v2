@@ -1,6 +1,6 @@
 # System-Wide Entity Relationship Diagram (ERD)
 
-This document provides the high-level database architecture for the USSCI Computerized Accounting System (CAS) and Enterprise Resource Planning (ERP). It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
+This document provides the high-level database architecture for the XCOM Computerized Accounting System (CAS) and Enterprise Resource Planning (ERP). It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
 
 ---
 
@@ -162,6 +162,70 @@ erDiagram
 
     EIS_TRANSMISSIONS ||--o{ EIS_TRANSMISSIONS : "retry lineage (self-ref)"
     EIS_TRANSMISSIONS ||--o{ EIS_TRANSMISSION_ITEMS : "contains (1-to-N)"
+
+    %% Statutory Audit Trail Schema (audit_trail)
+    AUDIT_TRAIL_LOGS {
+        uuid id PK "UUIDv7 primary key"
+        timestamptz created_at PK "Partitioning composite key"
+        bigint sequence_number UK "Strict monotonic sequence"
+        uuid user_id FK "FK auth.users.id (RESTRICT)"
+        varchar user_code "Snapshot USR-XXXXX"
+        varchar username_snapshot "Snapshot username"
+        varchar severity "INFO|SUCCESS|WARNING|ERROR|CRITICAL"
+        varchar module "ModuleName enum"
+        varchar resource "ResourceName enum"
+        varchar action "ActionName enum"
+        text reason "Mandatory justification"
+        varchar target_schema "Target schema"
+        varchar target_table "Target table"
+        varchar target_id "Target record PK"
+        varchar target_code "Document number (e.g. INV-000042)"
+        boolean is_reversal "True if void reversal"
+        varchar reversal_for_id "Original transaction ID/code"
+        jsonb old_values "State before mutation"
+        jsonb new_values "State after mutation"
+        jsonb changed_fields "Modified attributes"
+        jsonb context "Structured execution context"
+        inet ip_address "Client IP address"
+        text user_agent "Client user agent header"
+        varchar request_id "HTTP trace correlation ID"
+        uuid session_id FK "FK session.sessions.id"
+        char_64 record_hash "SHA-256 digest"
+        char_64 prev_hash "Preceding digest"
+        varchar chain_id "Chain scope identifier"
+    }
+
+    AUDIT_TRAIL_EXPORT_JOBS {
+        uuid id PK "UUIDv7 export job ID"
+        timestamptz requested_at "Queue timestamp"
+        timestamptz completed_at "Generation timestamp"
+        uuid requested_by FK "FK auth.users.id"
+        varchar file_format "CSV|DAT|XLSX|PDF"
+        varchar status "PENDING|PROCESSING|COMPLETED|FAILED"
+        jsonb filter_criteria "Export query filters"
+        int total_rows "Exported row count"
+        varchar file_path "Storage path"
+        char_64 sha256_checksum "Checksum"
+        text failure_reason "Error trace if failed"
+    }
+
+    AUDIT_TRAIL_HASH_CHECKPOINTS {
+        uuid id PK "UUIDv7 checkpoint ID"
+        bigint checkpoint_sequence PK "Checkpoint sequence"
+        timestamptz checkpoint_time "Checkpoint generation time"
+        bigint from_sequence "Starting sequence number"
+        bigint to_sequence "Ending sequence number"
+        char_64 root_hash "Merkle/tail hash"
+        varchar status "VALID|TAMPERED|CORRUPTED"
+        timestamptz verified_at "Verification timestamp"
+        jsonb verification_details "Integrity metrics"
+    }
+
+    AUTH_USERS ||--o{ AUDIT_TRAIL_LOGS : "acts in (1-to-N)"
+    SESSION_SESSIONS ||--o{ AUDIT_TRAIL_LOGS : "terminal context (1-to-N)"
+    AUTH_USERS ||--o{ AUDIT_TRAIL_EXPORT_JOBS : "requests (1-to-N)"
+    AUDIT_TRAIL_LOGS ||--o| AUDIT_TRAIL_HASH_CHECKPOINTS : "periodically sealed in"
+    AUDIT_TRAIL_LOGS ||--o{ AUDIT_TRAIL_EXPORT_JOBS : "filtered and extracted by"
 ```
 
 ---
@@ -170,11 +234,12 @@ erDiagram
 
 | Schema | Domain Focus | Primary Anchor Table | Cross-Schema Dependencies |
 | :--- | :--- | :--- | :--- |
-| **`auth`** | Core Identity, Credentials, Lifecycle | `auth.users` | Central anchor; referenced by `session`, `profile`, and `rbac`. |
+| **`auth`** | Core Identity, Credentials, Lifecycle | `auth.users` | Central anchor; referenced by `session`, `profile`, `rbac`, and `audit_trail`. |
 | **`profile`** | Personal Demographics & Physical Address | `profile.user_profiles` | Strictly dependent on `auth.users` (1-to-1, CASCADE). |
 | **`session`** | Refresh Token Ledger & Device Audits | `session.sessions` | Dependent on `auth.users` (1-to-N, CASCADE). |
 | **`rbac`** | Permissions, Roles, Dual-Auth & Snapshots | `rbac.roles`, `rbac.permissions` | Dependent on `auth.users` for user assignments, audit attribution, and authorizers. |
 | **`eis`** | BIR EIS v2.0 Invoicing Compliance | `eis.eis_transmissions` | Decoupled regulatory sandbox; operates independently of user schemas for security and strict compliance isolation. |
+| **`audit_trail`** | Statutory BIR CAS Audit Trail, Hash Chains, Forensic Diffs | `audit_trail.audit_logs` | References `auth.users` (ON DELETE RESTRICT) and `session.sessions`. Completely immutable via database trigger. |
 
 ---
 
@@ -182,8 +247,9 @@ erDiagram
 
 1. **Identity Deletion Cascades (`CASCADE`)**:
    - When an `auth.users` record is removed, all dependent operational records (`profile.user_profiles`, `session.sessions`, `rbac.user_roles`, and `rbac.user_permissions`) are automatically purged to prevent orphaned identity state.
-2. **Audit Attribution Protection (`SET NULL`)**:
-   - For statutory audit and approval records (`rbac.user_permissions.assigned_by_id`, `rbac.rbac_change_requests.reviewed_by_id`, and snapshot tables `changed_by_id`), foreign keys are constrained to `ON DELETE SET NULL`. This ensures historical audit trails remain intact even if the auditing administrator account is removed.
+2. **Audit Attribution Protection (`SET NULL` / `RESTRICT`)**:
+   - For statutory audit and approval records (`rbac.user_permissions.assigned_by_id`, `rbac.rbac_change_requests.reviewed_by_id`, and snapshot tables `changed_by_id`), foreign keys are constrained to `ON DELETE SET NULL`.
+   - For `audit_trail.audit_logs`, the foreign key to `auth.users.id` is constrained to `ON DELETE RESTRICT` (BIR CAS prohibits user purging once transactions or audit records exist).
 3. **Regulatory Isolation (`eis.*`)**:
    - The `eis` schema has no foreign key dependencies to user or session tables. All compliance transmissions must be verifiable purely on statutory parameters (TIN, branch code, invoice sequence, and BIR submission tokens).
 
@@ -193,8 +259,9 @@ erDiagram
 
 For table specifications, field-level data dictionaries, constraints, and index details, see:
 
-- [Authentication ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/authentication/ERD.md)
-- [Session Audit ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/session/ERD.md)
-- [User Profile ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/profile/ERD.md)
-- [RBAC & Dual-Authorization ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/rbac/ERD.md)
-- [BIR EIS Compliance ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/eis/ERD.md)
+- [Authentication ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/authentication/ERD.md)
+- [Session Audit ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/session/ERD.md)
+- [User Profile ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/profile/ERD.md)
+- [RBAC & Dual-Authorization ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/rbac/ERD.md)
+- [Audit Trail ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/audit_trail/ERD.md)
+

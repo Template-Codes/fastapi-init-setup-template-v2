@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from loguru import logger
 
 from dependencies.credential_guard import require_sudo_credential
+from dependencies.current_user import require_user_profile_and_get_id
 from dependencies.rbac_guard import require_role
 from modules.session.session_schema import (
     AdminUserSessionListItemResponse,
@@ -48,7 +49,10 @@ async def logout_current_session(
     summary="List all active sessions across all users with identity telemetry (Admin only).",
     status_code=status.HTTP_200_OK,
     response_model=List[AdminUserSessionListItemResponse],
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    ],
 )
 async def get_all_active_sessions(
     service: SessionService = Depends(),
@@ -63,7 +67,10 @@ async def get_all_active_sessions(
     summary="Admin force-logout a specific session by its UUID.",
     status_code=status.HTTP_200_OK,
     response_model=SessionLogoutResponse,
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+    ],
 )
 async def admin_logout_session_by_id(
     session_id: UUID,
@@ -79,6 +86,7 @@ async def admin_logout_session_by_id(
     status_code=status.HTTP_200_OK,
     response_model=SessionLogoutResponse,
     dependencies=[
+        Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
         Depends(require_sudo_credential),
     ],

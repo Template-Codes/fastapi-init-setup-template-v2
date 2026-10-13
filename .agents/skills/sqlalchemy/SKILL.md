@@ -1,7 +1,7 @@
 ---
 # sqlalchemy
 Description: 
-  Standard practices, model patterns, repository wrappers, and async database conventions for SQLAlchemy 2.0 in the USSCI ERP codebase. Use when creating or modifying ORM models, repositories, database sessions, and executing queries.
+  Standard practices, model patterns, repository wrappers, and async database conventions for SQLAlchemy 2.0 in the XCOM ERP codebase. Use when creating or modifying ORM models, repositories, database sessions, and executing queries.
 ---
 
 # SQLAlchemy 2.0 & Repository Standards

@@ -10,12 +10,12 @@
 
 ## 1. Executive Summary & Design Intention
 
-The `JWTValidator` middleware ([jwt_validator.py](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L16-L183)) is a high-performance, zero-database security guard executing at the request edge for all private routes.
+The `JWTValidator` middleware ([jwt_validator.py](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L16-L183)) is a high-performance, zero-database security guard executing at the request edge for all private routes.
 
 ### Primary Goals
 - **Zero Database Overhead (0ms DB I/O)**: Eliminates SQL database queries from private route authentication. Signature checks are performed purely in CPU memory, followed by an $O(1)$ Redis session check **0.05ms**.
 - **Instant Revocation & Stale Token Mitigation**: Verifies session active status, instant account suspension state, and single-active access token hashes against Redis on every private request.
-- **Zero-Latency Downstream Execution**: Pre-verified JWT claims are injected directly into FastAPI `request.state`. Downstream route handlers and dependencies ([get_current_user_id](file:///c:/Users/imper/Documents/ussci/erp/src/dependencies/current_user.py#L25-L26)) read claims from `request.state` with 0ms performance overhead.
+- **Zero-Latency Downstream Execution**: Pre-verified JWT claims are injected directly into FastAPI `request.state`. Downstream route handlers and dependencies ([get_current_user_id](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py#L25-L26)) read claims from `request.state` with 0ms performance overhead.
 
 ---
 
@@ -61,12 +61,12 @@ The `JWTValidator` middleware ([jwt_validator.py](file:///c:/Users/imper/Documen
 ## 3. The 3-Layer Validation Architecture
 
 ### Layer 1: Path & Route Exclusion Guard
-- **Source Code**: [jwt_validator.py:L48-L51](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L48-L51)
+- **Source Code**: [jwt_validator.py:L48-L51](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L48-L51)
 - **Logic**: Checks `request.url.path`.
   - If `req_path.startswith("/api/public")` or `req_path` is in `self.public_excluded_paths` (`/health`, `/docs`, `/redoc`, `/openapi.json`), the request immediately bypasses validation and proceeds to `call_next(request)`.
 
 ### Layer 2: Pure CPU Cryptographic Signature & Expiry Guard (0ms I/O)
-- **Source Code**: [jwt_validator.py:L56-L112](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L56-L112)
+- **Source Code**: [jwt_validator.py:L56-L112](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L56-L112)
 - **Token Extraction**:
   1. Header check: `Authorization: Bearer <token>`
   2. Fallback: `access_token` HTTP-Only cookie.
@@ -78,7 +78,7 @@ The `JWTValidator` middleware ([jwt_validator.py](file:///c:/Users/imper/Documen
   - Extracts claims: `sub` (User UUID) and `sid` (Session UUID).
 
 ### Layer 3: Redis Session & Account Validation Guard (O(1) ~0.05ms)
-- **Source Code**: [jwt_validator.py:L117-L165](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L117-L165)
+- **Source Code**: [jwt_validator.py:L117-L165](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L117-L165)
 - Performs an $O(1)$ async lookup in Redis for key `sessions:{session_id}:user:{user_id}`:
   1. **Cache Miss Check**: If key does not exist in Redis (session revoked or expired) -> Returns HTTP 401 `UNAUTHORIZED` ("Session has expired or been revoked").
   2. **Validation 3.1 (Session Active Check)**: Verifies `session_payload.get("is_active") == True`. If `False` -> Returns HTTP 401 `UNAUTHORIZED`.
@@ -102,7 +102,7 @@ This mechanism guarantees that **only the latest active access token** issued fo
 
 ## 5. Context Injection (`request.state`) & Downstream Integration
 
-Upon successful 3-layer validation, `JWTValidator` populates FastAPI `request.state` ([jwt_validator.py:L167-L173](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L167-L173)):
+Upon successful 3-layer validation, `JWTValidator` populates FastAPI `request.state` ([jwt_validator.py:L167-L173](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L167-L173)):
 
 ```python
 request.state.user_id = UUID(str(user_id))
@@ -112,7 +112,7 @@ request.state.is_profile_completed = bool(session_payload.get("is_profile_comple
 ```
 
 ### Downstream Dependency Optimization
-The core security dependency [get_current_user_id](file:///c:/Users/imper/Documents/ussci/erp/src/dependencies/current_user.py#L17-L26) checks `request.state` first:
+The core security dependency [get_current_user_id](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py#L17-L26) checks `request.state` first:
 
 ```python
 async def get_current_user_id(request: Request, ...) -> UUID:
@@ -194,7 +194,7 @@ sequenceDiagram
 
 ## 7. Error Handling & Standard Response Formats
 
-All middleware errors conform to the standard application error schema ([jwt_validator.py:L36-L42](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L36-L42)):
+All middleware errors conform to the standard application error schema ([jwt_validator.py:L36-L42](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L36-L42)):
 
 ```json
 {

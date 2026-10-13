@@ -13,7 +13,7 @@
 This authentication and authorization subsystem is designed as an enterprise-grade, defense-in-depth foundation for FastAPI applications. It is engineered to serve as a reusable production template to prevent boilerplate rewrite across future projects.
 
 ### Core Architectural Principles
-- **Defense in Depth**: Authentication checks occur at both the network edge (IP-based rate limiting), middleware layer ([JWTValidator](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L16-L183) for 0ms CPU verification + O(1) Redis session checks), controller/router layer (HTTP-Only cookie parsing & JWT validation), service layer (ABAC status checks, Argon2id verification, granular IP+Username lockout), and persistence layer (SHA-256 hashed tokens).
+- **Defense in Depth**: Authentication checks occur at both the network edge (IP-based rate limiting), middleware layer ([JWTValidator](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L16-L183) for 0ms CPU verification + O(1) Redis session checks), controller/router layer (HTTP-Only cookie parsing & JWT validation), service layer (ABAC status checks, Argon2id verification, granular IP+Username lockout), and persistence layer (SHA-256 hashed tokens).
 - **Refresh Token Rotation (RTR) & Instant Invalidation**: On every token refresh request (`POST /api/public/auth/refresh-token`), **both** access and refresh tokens are rotated. Presenting an old or previously used refresh token triggers automatic reuse detection, immediately revoking the session across PostgreSQL and Redis.
 - **Database I/O Throttling (Fast-Path Architecture)**: Token refresh operations validate against a single authoritative Redis cache in **0.5ms**. Database updates (rotating hashes and timestamp synchronization) are offloaded to non-blocking background tasks (`asyncio.create_task`) using dedicated async sessions (`postgres_client_async_session`), eliminating DB I/O overhead from the request-response hot path.
 - **Granular IP + Username Lockout Model**: Brute-force protection tracks failed attempts per `(IP, Username)` pair in Redis. Blocking 5 failed attempts locks out only the offending IP-username combination, preventing cross-IP Denial of Service (DoS) attacks on legitimate users.
@@ -28,14 +28,14 @@ The authentication system is structured into strict architectural layers located
 
 | Layer | Primary Files | Key Responsibilities & Line References |
 | :--- | :--- | :--- |
-| **API Routers** | [auth_router.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_router.py) | Exposes public auth endpoints, sets HTTP-Only cookies for access & refresh tokens, extracts request headers (`X-Forwarded-For`, `User-Agent`). See [auth_router.py:L19-L134](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_router.py#L19-L134). |
-| **Service Layer** | [auth_service.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_service.py) | Orchestrates Argon2id password hashing, IP+Username brute-force lockout, single active session concurrency guard, dual JWT generation, session creation, Refresh Token Rotation (RTR), and background DB sync. See [auth_service.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_service.py). |
-| **Edge Middleware** | [jwt_validator.py](file:///c:/Users/imper/Downloads/universal/erp/src/middlewares/jwt_validator.py) | Zero-DB, 3-layer validation middleware injecting pre-verified claims into `request.state` for private routes. See [jwt_validator.py](file:///c:/Users/imper/Downloads/universal/erp/src/middlewares/jwt_validator.py). |
-| **Security Guards** | [current_user.py](file:///c:/Users/imper/Downloads/universal/erp/src/dependencies/current_user.py) | FastAPI dependencies for protected endpoints: `get_current_user_id` leveraging `request.state`, and ABAC profile completion guard `require_user_profile_and_get_id`. |
-| **Domain Models** | [auth_model.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_model.py)<br>[session_model.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/session/session_model.py) | SQLAlchemy ORM models for users, roles, permissions, junction tables, and session audit logs. |
-| **Repositories** | [auth_repository.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/authentication/auth_repository.py)<br>[session_repo.py](file:///c:/Users/imper/Downloads/universal/erp/src/modules/session/session_repo.py) | Async database access abstractions for user credentials and active session state (`get_active_session_by_user_id`, `deactivate_session_by_id`). |
-| **Enums & Constants** | [enums.py](file:///c:/Users/imper/Downloads/universal/erp/src/shares/enums.py) | Standardized system permission strings formatted as `MODULE:RESOURCE:ACTION`. |
-| **Cache Utilities** | [maintain_cache_key.py](file:///c:/Users/imper/Downloads/universal/erp/src/utils/maintain_cache_key.py) | Redis key generators, IP+Username failed login tracking, and profile completion status caching. |
+| **API Routers** | [auth_router.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_router.py) | Exposes public auth endpoints, sets HTTP-Only cookies for access & refresh tokens, extracts request headers (`X-Forwarded-For`, `User-Agent`). See [auth_router.py:L19-L134](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_router.py#L19-L134). |
+| **Service Layer** | [auth_service.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_service.py) | Orchestrates Argon2id password hashing, IP+Username brute-force lockout, single active session concurrency guard, dual JWT generation, session creation, Refresh Token Rotation (RTR), and background DB sync. See [auth_service.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_service.py). |
+| **Edge Middleware** | [jwt_validator.py](file:///c:/Users/imper/Downloads/xcom/erp/src/middlewares/jwt_validator.py) | Zero-DB, 3-layer validation middleware injecting pre-verified claims into `request.state` for private routes. See [jwt_validator.py](file:///c:/Users/imper/Downloads/xcom/erp/src/middlewares/jwt_validator.py). |
+| **Security Guards** | [current_user.py](file:///c:/Users/imper/Downloads/xcom/erp/src/dependencies/current_user.py) | FastAPI dependencies for protected endpoints: `get_current_user_id` leveraging `request.state`, and ABAC profile completion guard `require_user_profile_and_get_id`. |
+| **Domain Models** | [auth_model.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_model.py)<br>[session_model.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/session/session_model.py) | SQLAlchemy ORM models for users, roles, permissions, junction tables, and session audit logs. |
+| **Repositories** | [auth_repository.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/authentication/auth_repository.py)<br>[session_repo.py](file:///c:/Users/imper/Downloads/xcom/erp/src/modules/session/session_repo.py) | Async database access abstractions for user credentials and active session state (`get_active_session_by_user_id`, `deactivate_session_by_id`). |
+| **Enums & Constants** | [enums.py](file:///c:/Users/imper/Downloads/xcom/erp/src/shares/enums.py) | Standardized system permission strings formatted as `MODULE:RESOURCE:ACTION`. |
+| **Cache Utilities** | [maintain_cache_key.py](file:///c:/Users/imper/Downloads/xcom/erp/src/utils/maintain_cache_key.py) | Redis key generators, IP+Username failed login tracking, and profile completion status caching. |
 
 ---
 
@@ -110,17 +110,17 @@ erDiagram
 ```
 
 ### Role-Based Access Control (RBAC) Mechanics
-- **Permissions**: Defined in [Permission](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_model.py#L34-L51). Formatted programmatically in [SystemPermission](file:///c:/Users/imper/Documents/ussci/erp/src/shares/enums.py#L43-L62) as `MODULE:RESOURCE:ACTION` (e.g., `AUTHENTICATION:USER:CREATE`).
-- **Roles**: Groups of permissions defined in [Role](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_model.py#L77-L101) (e.g., `SUPER_ADMIN`, `ADMIN`, `STAFF_USER`).
-- **Junction Tables**: [RolePermission](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_model.py#L54-L75) and [UserRole](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_model.py#L103-L119) implement M:N relationships loaded via `lazy="selectin"`.
+- **Permissions**: Defined in [Permission](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L34-L51). Formatted programmatically in [SystemPermission](file:///c:/Users/imper/Documents/xcom/erp/src/shares/enums.py#L43-L62) as `MODULE:RESOURCE:ACTION` (e.g., `AUTHENTICATION:USER:CREATE`).
+- **Roles**: Groups of permissions defined in [Role](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L77-L101) (e.g., `SUPER_ADMIN`, `ADMIN`, `STAFF_USER`).
+- **Junction Tables**: [RolePermission](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L54-L75) and [UserRole](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L103-L119) implement M:N relationships loaded via `lazy="selectin"`.
 
 ### Attribute-Based Access Control (ABAC) Mechanics
 In addition to RBAC roles, every access decision evaluates contextual attributes:
-1. **User Status Attribute** ([UserStatus](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_model.py#L26-L32)): Access is denied unless `user.status == UserStatus.ACTIVE` ([auth_service.py:L166-L170](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L166-L170)).
-2. **Temporal Ban Expiration Attribute**: Evaluated dynamically at runtime ([auth_service.py:L153-L165](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L153-L165)). If `banned_until_time` has expired, the system automatically restores a `SUSPENDED` account back to `ACTIVE`.
-3. **Granular IP + Username Lockout Attribute**: Pre-authentication brute-force check ([auth_service.py:L144-L151](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L144-L151)). Checks Redis key `failed_login_block:{ip}:{username}`. 5 consecutive failed attempts from the same IP set a 15-minute lockout for that specific IP-username pair.
-4. **Environment Attributes**: Client IP and User-Agent are recorded in `session.sessions` ([session_model.py:L35-L36](file:///c:/Users/imper/Documents/ussci/erp/src/modules/session/session_model.py#L35-L36)).
-5. **Profile Completion Attribute**: Enforced dynamically by dependency `require_user_profile_and_get_id` ([current_user.py:L70-L108](file:///c:/Users/imper/Documents/ussci/erp/src/dependencies/current_user.py#L70-L108)), returning HTTP 403 `PROFILE_SETUP_REQUIRED` if false.
+1. **User Status Attribute** ([UserStatus](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_model.py#L26-L32)): Access is denied unless `user.status == UserStatus.ACTIVE` ([auth_service.py:L166-L170](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L166-L170)).
+2. **Temporal Ban Expiration Attribute**: Evaluated dynamically at runtime ([auth_service.py:L153-L165](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L153-L165)). If `banned_until_time` has expired, the system automatically restores a `SUSPENDED` account back to `ACTIVE`.
+3. **Granular IP + Username Lockout Attribute**: Pre-authentication brute-force check ([auth_service.py:L144-L151](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L144-L151)). Checks Redis key `failed_login_block:{ip}:{username}`. 5 consecutive failed attempts from the same IP set a 15-minute lockout for that specific IP-username pair.
+4. **Environment Attributes**: Client IP and User-Agent are recorded in `session.sessions` ([session_model.py:L35-L36](file:///c:/Users/imper/Documents/xcom/erp/src/modules/session/session_model.py#L35-L36)).
+5. **Profile Completion Attribute**: Enforced dynamically by dependency `require_user_profile_and_get_id` ([current_user.py:L70-L108](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py#L70-L108)), returning HTTP 403 `PROFILE_SETUP_REQUIRED` if false.
 
 ---
 
@@ -259,7 +259,7 @@ sequenceDiagram
 
 ## 5. Session Cache Payload Specification
 
-The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-contained JSON session payload ([auth_service.py:L499-L527](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L499-L527)):
+The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-contained JSON session payload ([auth_service.py:L499-L527](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L499-L527)):
 
 | Field Name | Type | Description & Purpose |
 | :--- | :--- | :--- |
@@ -282,14 +282,14 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 
 ### 1. User Registration
 - **Endpoint**: `POST /api/public/auth/registration`
-- **Location**: [auth_router.py:L20-L32](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_router.py#L20-L32)
+- **Location**: [auth_router.py:L20-L32](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L20-L32)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Input**: `UserRegistrationRequest` (`username`, `email`, `plain_password`)
 - **Behavior**: Standardizes email to lowercase, checks email uniqueness, hashes password with Argon2id, creates `User` record with default `status = UserStatus.PENDING`. Unchanged.
 
 ### 2. User Authentication & Token Grant
 - **Endpoint**: `POST /api/public/auth/auth-tokens`
-- **Location**: [auth_router.py:L37-L91](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_router.py#L37-L91)
+- **Location**: [auth_router.py:L37-L91](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L37-L91)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Input**: `UserAuthenticationRequest` (`username`, `plain_password`)
 - **Behavior**: Checks IP+Username Redis lockout, verifies Argon2id password, generates dual JWTs, computes SHA-256 token hashes, persists session in PostgreSQL & Redis, returns payload and sets HTTP-Only cookies.
@@ -299,7 +299,7 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 
 ### 3. Refresh Tokens (RTR Rotation)
 - **Endpoint**: `POST /api/public/auth/refresh-token`
-- **Location**: [auth_router.py:L95-L133](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_router.py#L95-L133)
+- **Location**: [auth_router.py:L95-L133](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_router.py#L95-L133)
 - **Access**: Public (Protected by IP Rate Limiter)
 - **Behavior**: Extracts `refresh_token` from HTTP-Only cookie, verifies JWT signature, validates against Redis cache (`sessions:{sid}:user:{uid}`), verifies token hash for theft detection, rotates **both** access and refresh tokens, updates Redis payload instantly, dispatches background task `_sync_session_rotation_db`, and returns new rotated cookies.
 
@@ -308,8 +308,8 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 ## 7. Security Mechanics & Technicalities
 
 ### Cryptographic Algorithms
-1. **Password Hashing**: Argon2id via `pwdlib.PasswordHash.recommended()` ([auth_service.py:L33](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L33)). Hashing/verification offloaded to thread pool via `asyncio.to_thread` ([auth_service.py:L70](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L70), [L173](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L173)).
-2. **Token Hashing**: SHA-256 via `hashlib.sha256(token.encode()).hexdigest()` for both access tokens ([auth_service.py:L211](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L211)) and refresh tokens ([auth_service.py:L210](file:///c:/Users/imper/Documents/ussci/erp/src/modules/authentication/auth_service.py#L210)).
+1. **Password Hashing**: Argon2id via `pwdlib.PasswordHash.recommended()` ([auth_service.py:L33](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L33)). Hashing/verification offloaded to thread pool via `asyncio.to_thread` ([auth_service.py:L70](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L70), [L173](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L173)).
+2. **Token Hashing**: SHA-256 via `hashlib.sha256(token.encode()).hexdigest()` for both access tokens ([auth_service.py:L211](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L211)) and refresh tokens ([auth_service.py:L210](file:///c:/Users/imper/Documents/xcom/erp/src/modules/authentication/auth_service.py#L210)).
 3. **Dual JWT Keys**: Access and Refresh tokens use independent secret keys (`settings.ACCESS_JWT_SECRET_KEY` and `settings.REFRESH_JWT_SECRET_KEY`) encoded using HMAC-SHA256 (`HS256`).
 
 ---
@@ -317,7 +317,7 @@ The Redis key `sessions:{session_id}:user:{user_id}` contains a complete, self-c
 ## 8. Developer & AI Agent Quick Reference Guide
 
 ### Protecting a New Endpoint
-To protect a new private endpoint, rely on [current_user.py](file:///c:/Users/imper/Documents/ussci/erp/src/dependencies/current_user.py) which automatically uses pre-verified claims from `request.state` injected by [JWTValidator](file:///c:/Users/imper/Documents/ussci/erp/src/middlewares/jwt_validator.py#L16-L183):
+To protect a new private endpoint, rely on [current_user.py](file:///c:/Users/imper/Documents/xcom/erp/src/dependencies/current_user.py) which automatically uses pre-verified claims from `request.state` injected by [JWTValidator](file:///c:/Users/imper/Documents/xcom/erp/src/middlewares/jwt_validator.py#L16-L183):
 
 ```python
 from fastapi import APIRouter, Depends
@@ -338,7 +338,7 @@ async def get_profile_resource(user_id: UUID = Depends(require_user_profile_and_
 ```
 
 ### Key Configuration Variables
-Defined in [settings.py](file:///c:/Users/imper/Documents/ussci/erp/src/core/settings.py):
+Defined in [settings.py](file:///c:/Users/imper/Documents/xcom/erp/src/core/settings.py):
 - `ACCESS_JWT_SECRET_KEY`: Secret string for access token signing.
 - `REFRESH_JWT_SECRET_KEY`: Secret string for refresh token signing.
 - `ACCESS_JWT_EXPIRY_SEC`: Access token lifespan (e.g. 900s / 15 mins).
