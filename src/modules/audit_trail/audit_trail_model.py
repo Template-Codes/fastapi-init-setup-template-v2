@@ -127,7 +127,7 @@ class AuditLog(Base):
     target_id: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
     target_code: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
 
-    # Transaction reversal / void linkage (Annex B Item 10.c)
+    # Transaction reversal / void linkage
     is_reversal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reversal_for_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
@@ -168,7 +168,7 @@ class AuditLog(Base):
 
 class AuditExportJob(Base):
     """
-    Statutory audit log export task tracking (Annex B Line 171).
+    Statutory audit log export task tracking.
     Records generation parameters, row counts, and cryptographic checksums.
     """
 

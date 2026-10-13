@@ -1,8 +1,9 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 
 from base.schema import BaseSchema
 from shares.enums import AuditSeverity
@@ -136,3 +137,174 @@ class PaginatedAuditLogResponse(BaseSchema):
     total_count: int
     page: int
     limit: int
+
+
+# ==============================================================================
+# DETAIL PANEL & BEFORE/AFTER DIFF SCHEMAS
+# ==============================================================================
+
+class ChangeTypeEnum(str, Enum):
+    ADDED = "ADDED"
+    MODIFIED = "MODIFIED"
+    REMOVED = "REMOVED"
+    UNCHANGED = "UNCHANGED"
+
+
+class DiffFieldItem(BaseSchema):
+    """Field-level state mutation difference item."""
+    field: str
+    change_type: ChangeTypeEnum
+    old_value: Optional[Any] = None
+    new_value: Optional[Any] = None
+
+
+class StateDiffResponse(BaseSchema):
+    """Structured before/after diff calculation for an audit log mutation."""
+    total_changes: int
+    changed_fields: List[str]
+    changes: List[DiffFieldItem]
+
+
+class OperatorSnapshot(BaseSchema):
+    """Actor identity snapshot."""
+    user_id: Optional[UUID] = None
+    user_code: Optional[str] = None
+    username: Optional[str] = None
+
+
+class TargetEntitySnapshot(BaseSchema):
+    """Affected target entity snapshot."""
+    target_schema: Optional[str] = None
+    target_table: Optional[str] = None
+    target_id: Optional[str] = None
+    target_code: Optional[str] = None
+
+
+class ReversalSnapshot(BaseSchema):
+    """Transaction reversal and void linkage state."""
+    is_reversal: bool = False
+    reversal_for_id: Optional[str] = None
+
+
+class ExecutionContextDetail(BaseSchema):
+    """Execution telemetry and operational context metadata."""
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    request_id: Optional[str] = None
+    session_id: Optional[UUID] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class AuditLogDetailResponse(BaseSchema):
+    """Deep inspection view model for detail panel with context and before/after diff."""
+    id: UUID
+    created_at: datetime
+    sequence_number: int
+    severity: AuditSeverity
+    module: str
+    resource: str
+    action: str
+    reason: Optional[str] = None
+    operator: OperatorSnapshot
+    target_entity: TargetEntitySnapshot
+    context: ExecutionContextDetail
+    reversal: ReversalSnapshot
+    diff: StateDiffResponse
+
+
+# ==============================================================================
+# POLLING & MANUAL REFRESH SCHEMAS
+# ==============================================================================
+
+class AuditLogPollQuery(BaseSchema):
+    """Query parameters for head check polling and manual refresh button."""
+    since_cursor: Optional[str] = Field(default=None, alias="since_cursor", description="Cursor token (snake_case)")
+    sinceCursor: Optional[str] = Field(default=None, alias="sinceCursor", description="Cursor token (camelCase)")
+    module: Optional[str] = None
+    resource: Optional[str] = None
+    action: Optional[str] = None
+    severity: Optional[AuditSeverity] = None
+    user_id: Optional[UUID] = None
+    user_code: Optional[str] = None
+    username: Optional[str] = None
+    search: Optional[str] = None
+    target_table: Optional[str] = None
+    target_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_cursor(self) -> "AuditLogPollQuery":
+        token = self.since_cursor or self.sinceCursor
+        if not token:
+            raise ValueError("Parameter 'sinceCursor' (or 'since_cursor') is required")
+        self.since_cursor = token
+        return self
+
+
+class AuditLogPollResponse(BaseSchema):
+    """Lightweight polling check response indicating new entries count."""
+    has_new_entries: bool
+    new_entries_count: int
+    since_cursor: str
+    latest_cursor: Optional[str] = None
+    latest_created_at: Optional[datetime] = None
+
+
+# ==============================================================================
+# PRINT & EXPORT SCHEMAS (CSV / EXCEL)
+# ==============================================================================
+
+class ExportFormatEnum(str, Enum):
+    CSV = "CSV"
+    EXCEL = "EXCEL"
+
+
+class AuditLogExportRequest(BaseSchema):
+    """Parameters for exporting audit trail records."""
+    date_from: datetime = Field(..., description="Start date filter (UTC) - Required")
+    date_to: datetime = Field(..., description="End date filter (UTC) - Required")
+    file_format: ExportFormatEnum = Field(default=ExportFormatEnum.CSV, description="Target export file format (CSV or EXCEL)")
+    module: Optional[str] = None
+    resource: Optional[str] = None
+    action: Optional[str] = None
+    severity: Optional[AuditSeverity] = None
+    user_id: Optional[UUID] = None
+    user_code: Optional[str] = None
+    username: Optional[str] = None
+    search: Optional[str] = None
+    target_table: Optional[str] = None
+    target_id: Optional[str] = None
+    row_cap: int = Field(default=50000, ge=1, le=50000, description="Hard cap on rows to export (max 50,000)")
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "AuditLogExportRequest":
+        if self.date_from > self.date_to:
+            raise ValueError("date_from must not be later than date_to")
+        if (self.date_to - self.date_from).days > 90:
+            raise ValueError("Export date range cannot exceed 90 days")
+        return self
+
+
+class AuditLogExportResponse(BaseSchema):
+    """Response returned when an export operation is dispatched."""
+    job_id: UUID
+    status: str
+    file_format: ExportFormatEnum
+    requested_at: datetime
+    total_rows_estimated: int
+    is_async: bool
+    status_url: str
+    download_url: Optional[str] = None
+    message: str
+
+
+class AuditExportJobStatusResponse(BaseSchema):
+    """Status tracking representation for an asynchronous export task."""
+    job_id: UUID
+    status: str
+    file_format: str
+    requested_at: datetime
+    completed_at: Optional[datetime] = None
+    total_rows: Optional[int] = None
+    sha256_checksum: Optional[str] = None
+    download_url: Optional[str] = None
+    failure_reason: Optional[str] = None

@@ -22,7 +22,7 @@ This document provides the system-wide catalog of all HTTP API endpoints in the 
 | **Session** | `/api/private/session/*`<br>`/api/private/admin/sessions/*` | Session logout, enterprise terminal monitoring, targeted session revocation, and emergency mass termination. | [Session Endpoints](/xcom/erp/docs/docs/session/API_ENDPOINTS.md) |
 | **RBAC** | `/api/private/admin/rbac/*` | RBAC hierarchy queries, role assignments, zero-trust demotions, direct permission overrides, historical snapshot audits, rollbacks, and dual-control change requests. | [RBAC Endpoints](/xcom/erp/docs/docs/rbac/API_ENDPOINTS.md) |
 | **User Profile** | `/api/private/profile/*` | Personal demographic information, contact numbers, structured addresses, and privacy isolation. | [Profile Endpoints](/xcom/erp/docs/docs/profile/API_ENDPOINTS.md) |
-| **Audit Trail** | `/api/private/admin/audit-logs/*` | Read-only administrative activity audit log inspection, multi-attribute filtering (module, resource, action, date range), and UUID detail lookup. | [Audit Trail API Specification](/xcom/erp/docs/apis/audit_trail_api.http) |
+| **Audit Trail** | `/api/private/admin/audit-trail/*` | Read-only administrative activity audit log inspection, multi-attribute filtering (module, resource, action, date range), detail panels, and export jobs. | [Audit Trail API Specification](/xcom/erp/docs/apis/audit_trail_api.http) |
 
 ---
 

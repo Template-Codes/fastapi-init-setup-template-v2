@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from base.repository import BaseRepository
 from db.db_session import get_async_db
 from exceptions.app_exception import BadRequestException
-from modules.audit_trail.audit_trail_model import AuditLog
-from modules.audit_trail.audit_trail_schema import AuditLogQueryFilter
+from modules.audit_trail.audit_trail_model import AuditExportJob, AuditLog
+from modules.audit_trail.audit_trail_schema import (
+    AuditLogExportRequest,
+    AuditLogPollQuery,
+    AuditLogQueryFilter,
+)
 from shares.enums import AuditSeverity
 
 
@@ -68,33 +72,33 @@ class AuditTrailRepository(BaseRepository[AuditLog]):
         """
         return await self.create(data, commit=commit)
 
-    def _apply_filters(self, stmt, filter_params: AuditLogQueryFilter):
+    def _apply_filters(self, stmt, filter_params: Any):
         """Applies multidimensional search and filtering criteria to the select statement."""
-        if filter_params.module:
+        if getattr(filter_params, "module", None):
             stmt = stmt.where(AuditLog.module == filter_params.module)
-        if filter_params.resource:
+        if getattr(filter_params, "resource", None):
             stmt = stmt.where(AuditLog.resource == filter_params.resource)
-        if filter_params.action:
+        if getattr(filter_params, "action", None):
             stmt = stmt.where(AuditLog.action == filter_params.action)
-        if filter_params.severity:
+        if getattr(filter_params, "severity", None):
             stmt = stmt.where(AuditLog.severity == filter_params.severity)
-        if filter_params.user_id:
+        if getattr(filter_params, "user_id", None):
             stmt = stmt.where(AuditLog.user_id == filter_params.user_id)
-        if filter_params.user_code:
+        if getattr(filter_params, "user_code", None):
             stmt = stmt.where(AuditLog.user_code == filter_params.user_code)
-        if filter_params.username:
+        if getattr(filter_params, "username", None):
             stmt = stmt.where(AuditLog.username_snapshot.ilike(f"%{filter_params.username}%"))
-        if filter_params.date_from:
+        if getattr(filter_params, "date_from", None):
             stmt = stmt.where(AuditLog.created_at >= filter_params.date_from)
-        if filter_params.date_to:
+        if getattr(filter_params, "date_to", None):
             stmt = stmt.where(AuditLog.created_at <= filter_params.date_to)
-        if filter_params.search:
+        if getattr(filter_params, "search", None):
             stmt = stmt.where(AuditLog.reason.ilike(f"%{filter_params.search}%"))
-        if filter_params.target_table:
+        if getattr(filter_params, "target_table", None):
             stmt = stmt.where(AuditLog.target_table == filter_params.target_table)
-        if filter_params.target_id:
+        if getattr(filter_params, "target_id", None):
             stmt = stmt.where(AuditLog.target_id == filter_params.target_id)
-        if filter_params.target_code:
+        if getattr(filter_params, "target_code", None):
             stmt = stmt.where(AuditLog.target_code == filter_params.target_code)
         return stmt
 
@@ -183,6 +187,93 @@ class AuditTrailRepository(BaseRepository[AuditLog]):
         )
 
         return items, has_more, next_cursor
+
+    async def count_new_entries_since(
+        self,
+        since_cursor: str,
+        filter_params: AuditLogPollQuery,
+    ) -> Tuple[int, Optional[str], Optional[datetime]]:
+        """
+        Counts new audit log entries recorded since the specified cursor token.
+        Returns (new_entries_count, latest_cursor, latest_created_at).
+        """
+        cursor_dt, cursor_seq = decode_cursor(since_cursor)
+
+        stmt = select(
+            func.count(AuditLog.id),
+            func.max(AuditLog.created_at),
+            func.max(AuditLog.sequence_number),
+        ).where(
+            or_(
+                AuditLog.created_at > cursor_dt,
+                and_(
+                    AuditLog.created_at == cursor_dt,
+                    AuditLog.sequence_number > cursor_seq,
+                ),
+            )
+        )
+        stmt = self._apply_filters(stmt, filter_params)
+
+        res = await self.db.execute(stmt)
+        row = res.one_or_none()
+        if not row:
+            return 0, None, None
+
+        count, max_dt, max_seq = row
+        count = count or 0
+
+        latest_cursor = None
+        if count > 0 and max_dt and max_seq:
+            latest_cursor = encode_cursor(max_dt, max_seq)
+
+        return count, latest_cursor, max_dt
+
+    async def count_logs_for_export(
+        self, export_req: AuditLogExportRequest
+    ) -> int:
+        """Counts total matching logs for an export date range and filters."""
+        stmt = select(func.count(AuditLog.id))
+        stmt = self._apply_filters(stmt, export_req)
+        res = await self.db.execute(stmt)
+        return res.scalar_one() or 0
+
+    async def query_logs_for_export(
+        self, export_req: AuditLogExportRequest
+    ) -> Sequence[AuditLog]:
+        """
+        Retrieves matching audit logs for export ordered chronologically (ASC)
+        up to the configured row cap (max 50,000).
+        """
+        stmt = select(AuditLog)
+        stmt = self._apply_filters(stmt, export_req)
+        stmt = (
+            stmt.order_by(AuditLog.created_at.asc(), AuditLog.sequence_number.asc())
+            .limit(min(export_req.row_cap, 50000))
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def create_export_job(self, job_data: dict) -> AuditExportJob:
+        """Registers a new asynchronous audit export job."""
+        job = AuditExportJob(**job_data)
+        self.db.add(job)
+        await self.db.flush()
+        return job
+
+    async def get_export_job_by_id(self, job_id: UUID) -> Optional[AuditExportJob]:
+        """Fetches an audit export job by its UUID."""
+        stmt = select(AuditExportJob).where(AuditExportJob.id == job_id)
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def update_export_job(
+        self, job: AuditExportJob, updates: dict
+    ) -> AuditExportJob:
+        """Updates status, file path, row count, or checksum of an export job."""
+        for k, v in updates.items():
+            setattr(job, k, v)
+        await self.db.flush()
+        return job
 
     async def get_dashboard_aggregates(self) -> Dict[str, int]:
         """Calculates 24-hour KPI metrics for the audit trail dashboard view."""

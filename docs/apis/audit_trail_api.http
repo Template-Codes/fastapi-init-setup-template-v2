@@ -9,7 +9,7 @@
 # 1. Admin Initial Audit Trail Dashboard View
 # Retrieves initial dashboard view with 24h KPIs, filter options catalog, and latest log slice.
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
-GET {{host}}/api/private/admin/audit-logs/dashboard
+GET {{host}}/api/private/admin/audit-trail/dashboard
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -17,7 +17,7 @@ X-Header: {{secret_header_value}}
 ###
 # 2. Admin List Audit Logs (Default Keyset Cursor View)
 # Retrieves activity audit logs ordered newest-first with cursor metadata and shareable URL.
-GET {{host}}/api/private/admin/audit-logs?limit=50
+GET {{host}}/api/private/admin/audit-trail/activity-logs?limit=50
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -25,7 +25,7 @@ X-Header: {{secret_header_value}}
 ###
 # 3. Admin Filter Audit Logs by Severity
 # Filters logs by severity level (e.g. INFO, SUCCESS, WARNING, ERROR, CRITICAL).
-GET {{host}}/api/private/admin/audit-logs?severity=WARNING&limit=25
+GET {{host}}/api/private/admin/audit-trail/activity-logs?severity=WARNING&limit=25
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -33,7 +33,7 @@ X-Header: {{secret_header_value}}
 ###
 # 4. Admin Filter Audit Logs by Module and Resource
 # Filters logs by module (e.g. AUTHENTICATION, PROFILE, SESSION, RBAC, SYSTEM) and resource.
-GET {{host}}/api/private/admin/audit-logs?module=AUTHENTICATION&resource=USER&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?module=AUTHENTICATION&resource=USER&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -41,7 +41,7 @@ X-Header: {{secret_header_value}}
 ###
 # 5. Admin Filter Audit Logs by Who (User ID, User Code, Username)
 # Filters logs by actor identity (user UUID, employee code, or username snapshot substring).
-GET {{host}}/api/private/admin/audit-logs?user_code=USR-00001&username=admin&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?user_code=USR-00001&username=admin&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -49,7 +49,7 @@ X-Header: {{secret_header_value}}
 ###
 # 6. Admin Filter Audit Logs by When (Date & Time Range UTC)
 # Filters logs between start date and end date ISO timestamps.
-GET {{host}}/api/private/admin/audit-logs?date_from=2026-10-01T00:00:00Z&date_to=2026-10-14T23:59:59Z&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?date_from=2026-10-01T00:00:00Z&date_to=2026-10-14T23:59:59Z&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -57,7 +57,7 @@ X-Header: {{secret_header_value}}
 ###
 # 7. Admin Filter Audit Logs by Action
 # Filters logs by administrative or lifecycle action (e.g. CREATE, UPDATE, DELETE, LOGIN, REVOKE).
-GET {{host}}/api/private/admin/audit-logs?action=UPDATE&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?action=UPDATE&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -65,7 +65,7 @@ X-Header: {{secret_header_value}}
 ###
 # 8. Admin Text Search on Reason
 # Performs case-insensitive substring search across the reason explanation field.
-GET {{host}}/api/private/admin/audit-logs?search=session&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?search=session&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -73,7 +73,7 @@ X-Header: {{secret_header_value}}
 ###
 # 9. Admin Keyset Cursor Pagination Traversal
 # Traverses to the next page using the next_cursor token returned from previous page.
-GET {{host}}/api/private/admin/audit-logs?cursor=eyJ0IjoiMjAyNi0xMC0xM1QxMTowMDowMCswMDowMCIsInMiOjF9&limit=20
+GET {{host}}/api/private/admin/audit-trail/activity-logs?cursor=eyJ0IjoiMjAyNi0xMC0xM1QxMTowMDowMCswMDowMCIsInMiOjF9&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
@@ -82,15 +82,84 @@ X-Header: {{secret_header_value}}
 # 10. Admin Record Lifecycle History View
 # Retrieves chronological state mutation diffs and lifecycle events for an affected entity record.
 # Uses index ix_audit_logs_target_entity_created (target_table, target_id, created_at DESC).
-GET {{host}}/api/private/admin/audit-logs/records/users/USR-12345/history?limit=50
+GET {{host}}/api/private/admin/audit-trail/records/users/USR-12345/history?limit=50
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ###
-# 11. Admin Retrieve Audit Log Detail by UUID
-# Retrieves full detail of a specific activity audit log entry by UUID.
+# 11. Admin Retrieve Audit Log Summary by UUID
+# Retrieves overview of a specific activity audit log entry by UUID.
 # Replace with an existing audit log UUID.
-GET {{host}}/api/private/admin/audit-logs/00000000-0000-0000-0000-000000000000
+GET {{host}}/api/private/admin/audit-trail/activity-logs/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 12. Admin Detail Panel Inspection with Before/After State Diff
+# Retrieves complete detail panel view model with operational execution context
+# (IP, user agent, request ID, session ID) and structured before/after state diff.
+GET {{host}}/api/private/admin/audit-trail/activity-logs/00000000-0000-0000-0000-000000000000/detail
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 13. Admin Polling Head Check & Manual Refresh Count
+# Lightweight check indicating count of new entries since since_cursor.
+# Used by 60s background polling banner and Manual Refresh button.
+GET {{host}}/api/private/admin/audit-trail/poll-new-entries?since_cursor=eyJ0IjoiMjAyNi0xMC0xM1QxMTowMDowMCswMDowMCIsInMiOjF9&module=AUTHENTICATION
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 14. Admin Export Audit Logs (CSV Synchronous Streaming)
+# Streams CSV export directly if matching rows <= 1,000.
+# Requires UTC date range (max 90 days span) and enforces 50,000 row cap.
+POST {{host}}/api/private/admin/audit-trail/export-logs
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "dateFrom": "2026-10-01T00:00:00Z",
+    "dateTo": "2026-10-14T23:59:59Z",
+    "fileFormat": "CSV",
+    "module": "AUTHENTICATION",
+    "rowCap": 50000
+}
+
+
+###
+# 15. Admin Export Audit Logs (Excel Asynchronous Background Job)
+# Dispatches an asynchronous export job if matching rows > 1,000.
+# Returns HTTP 202 Accepted with job ID and status URL.
+POST {{host}}/api/private/admin/audit-trail/export-logs
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+{
+    "dateFrom": "2026-08-01T00:00:00Z",
+    "dateTo": "2026-10-14T23:59:59Z",
+    "fileFormat": "EXCEL",
+    "severity": "CRITICAL",
+    "rowCap": 50000
+}
+
+
+###
+# 16. Admin Check Export Job Status
+# Polls status of an asynchronous export task.
+# Replace with job ID returned in 202 response.
+GET {{host}}/api/private/admin/audit-trail/export-jobs/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 17. Admin Download Completed Export File
+# Downloads the generated CSV or Excel file payload.
+GET {{host}}/api/private/admin/audit-trail/export-jobs/00000000-0000-0000-0000-000000000000/download
 Content-Type: application/json
 X-Header: {{secret_header_value}}

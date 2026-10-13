@@ -1,11 +1,17 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 import uuid
 import pytest
 
 from exceptions.app_exception import NotFoundException
 from modules.audit_trail.audit_trail_model import AuditLog
-from modules.audit_trail.audit_trail_schema import AuditLogQueryFilter
+from modules.audit_trail.audit_trail_schema import (
+    AuditLogExportRequest,
+    AuditLogPollQuery,
+    AuditLogQueryFilter,
+    ChangeTypeEnum,
+    ExportFormatEnum,
+)
 from modules.audit_trail.audit_trail_service import AuditTrailService
 from shares.enums import ActionName, AuditSeverity, ModuleName, ResourceName
 
@@ -271,4 +277,161 @@ async def test_get_record_history_success(audit_service, mock_audit_repo):
     assert history.target_code == "ROLE_XYZ"
     assert len(history.history) == 1
     assert history.history[0].id == log_id
+
+
+@pytest.mark.asyncio
+async def test_get_log_detail_success_with_diff(audit_service, mock_audit_repo):
+    """Test detail panel retrieval with context and field-by-field before/after diff."""
+    log_id = uuid.uuid4()
+    mock_log = MagicMock(
+        spec=AuditLog,
+        id=log_id,
+        created_at=datetime.now(timezone.utc),
+        sequence_number=50,
+        user_id=uuid.uuid4(),
+        user_code="EMP-01",
+        username_snapshot="john_doe",
+        severity=AuditSeverity.WARNING,
+        module="AUTHENTICATION",
+        resource="USER",
+        action="UPDATE",
+        reason="Suspended inactive user",
+        target_schema="auth",
+        target_table="users",
+        target_id="usr-123",
+        target_code="USR-123",
+        old_values={"status": "ACTIVE", "role": "USER"},
+        new_values={"status": "SUSPENDED", "phone": "123456"},
+        changed_fields=["status"],
+        is_reversal=False,
+        reversal_for_id=None,
+        context={"client": "web"},
+        ip_address="192.168.1.1",
+        user_agent="Firefox",
+        request_id="req-999",
+        session_id=None,
+    )
+    mock_audit_repo.get_by_id.return_value = mock_log
+
+    detail = await audit_service.get_log_detail(log_id)
+
+    assert detail.id == log_id
+    assert detail.operator.user_code == "EMP-01"
+    assert detail.target_entity.target_table == "users"
+    assert detail.context.ip_address == "192.168.1.1"
+
+    # Verify diff items
+    diff_map = {item.field: item for item in detail.diff.changes}
+    assert diff_map["status"].change_type == ChangeTypeEnum.MODIFIED
+    assert diff_map["status"].old_value == "ACTIVE"
+    assert diff_map["status"].new_value == "SUSPENDED"
+
+    assert diff_map["phone"].change_type == ChangeTypeEnum.ADDED
+    assert diff_map["phone"].old_value is None
+    assert diff_map["phone"].new_value == "123456"
+
+    assert diff_map["role"].change_type == ChangeTypeEnum.REMOVED
+    assert diff_map["role"].old_value == "USER"
+    assert diff_map["role"].new_value is None
+
+
+@pytest.mark.asyncio
+async def test_poll_new_entries_success(audit_service, mock_audit_repo):
+    """Test polling head check indicates new entries count and latest cursor."""
+    now = datetime.now(timezone.utc)
+    mock_audit_repo.count_new_entries_since.return_value = (5, "latest_cursor_abc", now)
+
+    query = AuditLogPollQuery(since_cursor="old_cursor_xyz", module="AUTHENTICATION")
+    res = await audit_service.poll_new_entries(query)
+
+    assert res.has_new_entries is True
+    assert res.new_entries_count == 5
+    assert res.latest_cursor == "latest_cursor_abc"
+    assert res.latest_created_at == now
+
+
+@pytest.mark.asyncio
+async def test_create_export_direct_streaming_under_threshold(audit_service, mock_audit_repo):
+    """Test that export matching <= 1,000 rows streams CSV/Excel directly and logs audit event."""
+    mock_audit_repo.count_logs_for_export.return_value = 50
+    mock_log = MagicMock(
+        spec=AuditLog,
+        id=uuid.uuid4(),
+        created_at=datetime.now(timezone.utc),
+        sequence_number=1,
+        severity=AuditSeverity.INFO,
+        module="SYSTEM",
+        resource="ROLE",
+        action="CREATE",
+        reason="Test export",
+        user_id=None,
+        user_code=None,
+        username_snapshot=None,
+        target_table=None,
+        target_id=None,
+        target_code=None,
+        is_reversal=False,
+        ip_address=None,
+    )
+    mock_audit_repo.query_logs_for_export.return_value = [mock_log]
+
+    now = datetime.now(timezone.utc)
+    export_req = AuditLogExportRequest(
+        date_from=now - timedelta(days=5),
+        date_to=now,
+        file_format=ExportFormatEnum.CSV,
+    )
+
+    admin_id = uuid.uuid4()
+    async_res, content, filename, content_type = await audit_service.create_export(
+        export_req=export_req,
+        current_user_id=admin_id,
+        current_user_code="ADM-01",
+    )
+
+    assert async_res is None
+    assert content is not None
+    assert "text/csv" in content_type
+    assert filename.startswith("audit_logs_")
+    assert filename.endswith(".csv")
+
+    # Verify audit log was created for the export
+    mock_audit_repo.create_log.assert_awaited()
+    audit_call = mock_audit_repo.create_log.call_args[0][0]
+    assert audit_call["action"] == "EXPORT"
+    assert audit_call["resource"] == "EXPORT_JOB"
+
+
+@pytest.mark.asyncio
+async def test_create_export_async_job_above_threshold(audit_service, mock_audit_repo):
+    """Test that export matching > 1,000 rows registers an AuditExportJob and returns 202 response."""
+    mock_audit_repo.count_logs_for_export.return_value = 2500
+    job_id = uuid.uuid4()
+    mock_job = MagicMock(
+        id=job_id,
+        status="PENDING",
+        requested_at=datetime.now(timezone.utc),
+    )
+    mock_audit_repo.create_export_job.return_value = mock_job
+
+    now = datetime.now(timezone.utc)
+    export_req = AuditLogExportRequest(
+        date_from=now - timedelta(days=10),
+        date_to=now,
+        file_format=ExportFormatEnum.EXCEL,
+    )
+
+    admin_id = uuid.uuid4()
+    async_res, content, filename, content_type = await audit_service.create_export(
+        export_req=export_req,
+        current_user_id=admin_id,
+        current_user_code="ADM-01",
+    )
+
+    assert async_res is not None
+    assert async_res.is_async is True
+    assert async_res.job_id == job_id
+    assert async_res.total_rows_estimated == 2500
+    assert content is None
+
 
