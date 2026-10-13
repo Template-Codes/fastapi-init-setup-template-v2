@@ -139,7 +139,7 @@ async def test_audit_logs_list_and_filter_success_for_admin(
     res = await async_client.get("/api/private/admin/audit-logs", headers=headers)
     assert res.status_code == 200
     data = res.json()
-    assert data["totalCount"] >= 2
+    assert "pagination" in data
     assert len(data["items"]) >= 2
     item_ids = [item["id"] for item in data["items"]]
     assert str(log1.id) in item_ids
@@ -164,6 +164,228 @@ async def test_audit_logs_list_and_filter_success_for_admin(
     module_item_ids = [item["id"] for item in filtered_module_data["items"]]
     assert str(log2.id) in module_item_ids
     assert str(log1.id) not in module_item_ids
+
+
+@pytest.mark.asyncio
+async def test_audit_logs_dashboard_endpoint(
+    async_client: AsyncClient, async_cache, db_session
+):
+    """Admin user can retrieve dashboard initial view with KPIs, filter options, and logs."""
+    redis_async_client._redis = async_cache
+
+    admin_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    token = _create_jwt_token(admin_id, session_id)
+    await _setup_session_and_roles(
+        async_cache, admin_id, session_id, token, roles=[RoleName.ADMIN.value]
+    )
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    admin_user = User(
+        id=admin_id,
+        username=f"adm_{admin_id.hex[:6]}",
+        email=f"adm_{admin_id.hex[:6]}@example.com",
+        password_hash="dummy_hash",
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(admin_user)
+
+    log = AuditLog(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+        action=ActionName.CREATE.value,
+        module="SYSTEM",
+        resource="ROLE",
+        severity=AuditSeverity.CRITICAL,
+    )
+    db_session.add(log)
+    await db_session.flush()
+
+    res = await async_client.get("/api/private/admin/audit-logs/dashboard", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "stats" in data
+    assert data["stats"]["eventsLast24h"] >= 1
+    assert data["stats"]["criticalEventsLast24h"] >= 1
+    assert "filterOptions" in data
+    assert len(data["filterOptions"]["modules"]) > 0
+    assert len(data["filterOptions"]["severities"]) > 0
+    assert "initialLogs" in data
+    assert "pagination" in data["initialLogs"]
+
+
+@pytest.mark.asyncio
+async def test_audit_logs_advanced_filters_and_cursor_pagination(
+    async_client: AsyncClient, async_cache, db_session
+):
+    """Admin user can search reason text, filter by actor and severity, and traverse cursors."""
+    redis_async_client._redis = async_cache
+
+    admin_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    token = _create_jwt_token(admin_id, session_id)
+    await _setup_session_and_roles(
+        async_cache, admin_id, session_id, token, roles=[RoleName.SUPER_ADMIN.value]
+    )
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    admin_user = User(
+        id=admin_id,
+        username=f"adm_{admin_id.hex[:6]}",
+        email=f"adm_{admin_id.hex[:6]}@example.com",
+        password_hash="dummy_hash",
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(admin_user)
+
+    now = datetime.now(timezone.utc)
+    log_alpha = AuditLog(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+        user_code="EMP-100",
+        username_snapshot="john_doe",
+        action=ActionName.UPDATE.value,
+        module="AUTHENTICATION",
+        resource="USER",
+        reason="Suspicious login reset password",
+        severity=AuditSeverity.WARNING,
+        created_at=now,
+    )
+    log_beta = AuditLog(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+        user_code="EMP-200",
+        username_snapshot="jane_smith",
+        action=ActionName.DELETE.value,
+        module="SESSION",
+        resource="SESSION",
+        reason="Revoked inactive terminal",
+        severity=AuditSeverity.INFO,
+        created_at=now - timedelta(minutes=5),
+    )
+    db_session.add_all([log_alpha, log_beta])
+    await db_session.flush()
+
+    # 1. Reason substring search
+    res_search = await async_client.get(
+        "/api/private/admin/audit-logs?search=suspicious", headers=headers
+    )
+    assert res_search.status_code == 200
+    search_items = res_search.json()["items"]
+    assert len(search_items) >= 1
+    assert any(item["id"] == str(log_alpha.id) for item in search_items)
+    assert not any(item["id"] == str(log_beta.id) for item in search_items)
+
+    # 2. Who filter: user_code and username
+    res_who = await async_client.get(
+        "/api/private/admin/audit-logs?user_code=EMP-100&username=john", headers=headers
+    )
+    assert res_who.status_code == 200
+    who_items = res_who.json()["items"]
+    assert any(item["id"] == str(log_alpha.id) for item in who_items)
+    assert not any(item["id"] == str(log_beta.id) for item in who_items)
+
+    # 3. Severity filter
+    res_sev = await async_client.get(
+        "/api/private/admin/audit-logs?severity=WARNING", headers=headers
+    )
+    assert res_sev.status_code == 200
+    sev_items = res_sev.json()["items"]
+    assert any(item["id"] == str(log_alpha.id) for item in sev_items)
+
+    # 4. Cursor pagination traversal
+    res_page1 = await async_client.get(
+        "/api/private/admin/audit-logs?limit=1", headers=headers
+    )
+    assert res_page1.status_code == 200
+    page1_data = res_page1.json()
+    assert len(page1_data["items"]) == 1
+    assert page1_data["pagination"]["hasMore"] is True
+    next_cursor = page1_data["pagination"]["nextCursor"]
+    assert next_cursor is not None
+
+    res_page2 = await async_client.get(
+        f"/api/private/admin/audit-logs?limit=1&cursor={next_cursor}", headers=headers
+    )
+    assert res_page2.status_code == 200
+    page2_data = res_page2.json()
+    assert len(page2_data["items"]) == 1
+    assert page2_data["items"][0]["id"] != page1_data["items"][0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_record_history_endpoint(
+    async_client: AsyncClient, async_cache, db_session
+):
+    """Admin user can inspect chronological mutation lifecycle of a specific domain record."""
+    redis_async_client._redis = async_cache
+
+    admin_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    token = _create_jwt_token(admin_id, session_id)
+    await _setup_session_and_roles(
+        async_cache, admin_id, session_id, token, roles=[RoleName.ADMIN.value]
+    )
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    admin_user = User(
+        id=admin_id,
+        username=f"adm_{admin_id.hex[:6]}",
+        email=f"adm_{admin_id.hex[:6]}@example.com",
+        password_hash="dummy_hash",
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(admin_user)
+
+    target_table = "users"
+    target_record_id = "target-user-999"
+
+    log_entry1 = AuditLog(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+        target_table=target_table,
+        target_id=target_record_id,
+        target_code="USR-999",
+        action=ActionName.CREATE.value,
+        module="AUTHENTICATION",
+        resource="USER",
+        new_values={"status": "PENDING"},
+        severity=AuditSeverity.INFO,
+    )
+    log_entry2 = AuditLog(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+        target_table=target_table,
+        target_id=target_record_id,
+        target_code="USR-999",
+        action=ActionName.UPDATE.value,
+        module="AUTHENTICATION",
+        resource="USER",
+        old_values={"status": "PENDING"},
+        new_values={"status": "ACTIVE"},
+        changed_fields=["status"],
+        severity=AuditSeverity.INFO,
+    )
+    db_session.add_all([log_entry1, log_entry2])
+    await db_session.flush()
+
+    res = await async_client.get(
+        f"/api/private/admin/audit-logs/records/{target_table}/{target_record_id}/history",
+        headers=headers,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["targetTable"] == target_table
+    assert data["targetId"] == target_record_id
+    assert data["targetCode"] == "USR-999"
+    assert len(data["history"]) >= 2
+    history_ids = [item["id"] for item in data["history"]]
+    assert str(log_entry1.id) in history_ids
+    assert str(log_entry2.id) in history_ids
 
 
 @pytest.mark.asyncio

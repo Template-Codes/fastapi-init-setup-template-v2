@@ -157,3 +157,118 @@ async def test_get_log_by_id_not_found_raises_404(audit_service, mock_audit_repo
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.error_code == "AUDIT_LOG_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_get_logs_cursor_success(audit_service, mock_audit_repo):
+    """Test cursor-based retrieval of audit logs and canonical URL generation."""
+    log_id = uuid.uuid4()
+    mock_log = MagicMock(
+        spec=AuditLog,
+        id=log_id,
+        created_at=datetime.now(timezone.utc),
+        sequence_number=101,
+        user_id=uuid.uuid4(),
+        user_code="USR-0001",
+        username_snapshot="operator",
+        severity=AuditSeverity.INFO,
+        module="SYSTEM",
+        resource="ROLE",
+        action="UPDATE",
+        reason="Updated role permission",
+        target_schema=None,
+        target_table="roles",
+        target_id="role-1",
+        target_code="ROLE_ADMIN",
+        old_values={"is_active": True},
+        new_values={"is_active": False},
+        changed_fields=["is_active"],
+        is_reversal=False,
+        reversal_for_id=None,
+        context=None,
+        ip_address="127.0.0.1",
+        user_agent="Postman",
+        request_id="req-123",
+        session_id=None,
+    )
+    mock_audit_repo.query_logs_cursor.return_value = ([mock_log], True, "mock_cursor_token")
+
+    filter_params = AuditLogQueryFilter(limit=10, module="SYSTEM", action="UPDATE")
+    res = await audit_service.get_logs_cursor(filter_params)
+
+    assert len(res.items) == 1
+    assert res.items[0].id == log_id
+    assert res.pagination.has_more is True
+    assert res.pagination.next_cursor == "mock_cursor_token"
+    assert "limit=10" in res.pagination.canonical_url
+    assert "cursor=mock_cursor_token" in res.pagination.next_url
+
+
+@pytest.mark.asyncio
+async def test_get_dashboard_data_success(audit_service, mock_audit_repo):
+    """Test dashboard data assembly with aggregates, filter options, and initial logs."""
+    mock_audit_repo.get_dashboard_aggregates.return_value = {
+        "events_last_24h": 42,
+        "critical_events_last_24h": 2,
+        "error_events_last_24h": 5,
+    }
+    mock_audit_repo.query_logs_cursor.return_value = ([], False, None)
+
+    dashboard = await audit_service.get_dashboard_data()
+
+    assert dashboard.stats.events_last_24h == 42
+    assert dashboard.stats.critical_events_last_24h == 2
+    assert dashboard.stats.error_events_last_24h == 5
+    assert len(dashboard.filter_options.modules) > 0
+    assert len(dashboard.filter_options.severities) > 0
+    assert len(dashboard.filter_options.actions) > 0
+    assert len(dashboard.filter_options.resources) > 0
+    assert dashboard.initial_logs.pagination.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_get_record_history_success(audit_service, mock_audit_repo):
+    """Test retrieving chronological history for a specific record."""
+    log_id = uuid.uuid4()
+    mock_log = MagicMock(
+        spec=AuditLog,
+        id=log_id,
+        created_at=datetime.now(timezone.utc),
+        sequence_number=1,
+        user_id=uuid.uuid4(),
+        user_code="ADM-01",
+        username_snapshot="admin",
+        severity=AuditSeverity.WARNING,
+        module="RBAC",
+        resource="ROLE",
+        action="UPDATE",
+        reason="Revoked role",
+        target_schema=None,
+        target_table="roles",
+        target_id="role-xyz",
+        target_code="ROLE_XYZ",
+        old_values=None,
+        new_values=None,
+        changed_fields=None,
+        is_reversal=False,
+        reversal_for_id=None,
+        context=None,
+        ip_address=None,
+        user_agent=None,
+        request_id=None,
+        session_id=None,
+    )
+    mock_audit_repo.query_record_history.return_value = ([mock_log], False, None)
+
+    history = await audit_service.get_record_history(
+        target_table="roles",
+        target_id="role-xyz",
+        limit=10,
+    )
+
+    assert history.target_table == "roles"
+    assert history.target_id == "role-xyz"
+    assert history.target_code == "ROLE_XYZ"
+    assert len(history.history) == 1
+    assert history.history[0].id == log_id
+

@@ -6,42 +6,91 @@
 # ==============================================================================
 
 ###
-# 1. Admin List Audit Logs (Default Paginated View)
-# Retrieves paginated activity audit logs ordered by newest first.
+# 1. Admin Initial Audit Trail Dashboard View
+# Retrieves initial dashboard view with 24h KPIs, filter options catalog, and latest log slice.
 # Guarded by require_role(SUPER_ADMIN, ADMIN).
-GET {{host}}/api/private/admin/audit-logs?page=1&limit=50
+GET {{host}}/api/private/admin/audit-logs/dashboard
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ###
-# 2. Admin Filter Audit Logs by System Module
-# Filters logs by module (e.g. AUTHENTICATION, PROFILE, SESSION, RBAC, SYSTEM).
-GET {{host}}/api/private/admin/audit-logs?module=AUTHENTICATION&page=1&limit=20
+# 2. Admin List Audit Logs (Default Keyset Cursor View)
+# Retrieves activity audit logs ordered newest-first with cursor metadata and shareable URL.
+GET {{host}}/api/private/admin/audit-logs?limit=50
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ###
-# 3. Admin Filter Audit Logs by Action and Severity
-# Filters logs by action (e.g. CREATE, UPDATE, DELETE, LOGIN) and severity (INFO, WARNING, CRITICAL).
-GET {{host}}/api/private/admin/audit-logs?action=CREATE&severity=INFO&page=1&limit=20
+# 3. Admin Filter Audit Logs by Severity
+# Filters logs by severity level (e.g. INFO, SUCCESS, WARNING, ERROR, CRITICAL).
+GET {{host}}/api/private/admin/audit-logs?severity=WARNING&limit=25
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ###
-# 4. Admin Filter Audit Logs by Resource and Target ID
-# Filters logs by target resource (e.g. USER, ROLE, SESSION) and specific target ID.
-GET {{host}}/api/private/admin/audit-logs?resource=ROLE&target_id=role-123
+# 4. Admin Filter Audit Logs by Module and Resource
+# Filters logs by module (e.g. AUTHENTICATION, PROFILE, SESSION, RBAC, SYSTEM) and resource.
+GET {{host}}/api/private/admin/audit-logs?module=AUTHENTICATION&resource=USER&limit=20
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 
 
 ###
-# 5. Admin Retrieve Audit Log Detail by UUID
+# 5. Admin Filter Audit Logs by Who (User ID, User Code, Username)
+# Filters logs by actor identity (user UUID, employee code, or username snapshot substring).
+GET {{host}}/api/private/admin/audit-logs?user_code=USR-00001&username=admin&limit=20
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 6. Admin Filter Audit Logs by When (Date & Time Range UTC)
+# Filters logs between start date and end date ISO timestamps.
+GET {{host}}/api/private/admin/audit-logs?date_from=2026-10-01T00:00:00Z&date_to=2026-10-14T23:59:59Z&limit=20
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 7. Admin Filter Audit Logs by Action
+# Filters logs by administrative or lifecycle action (e.g. CREATE, UPDATE, DELETE, LOGIN, REVOKE).
+GET {{host}}/api/private/admin/audit-logs?action=UPDATE&limit=20
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 8. Admin Text Search on Reason
+# Performs case-insensitive substring search across the reason explanation field.
+GET {{host}}/api/private/admin/audit-logs?search=session&limit=20
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 9. Admin Keyset Cursor Pagination Traversal
+# Traverses to the next page using the next_cursor token returned from previous page.
+GET {{host}}/api/private/admin/audit-logs?cursor=eyJ0IjoiMjAyNi0xMC0xM1QxMTowMDowMCswMDowMCIsInMiOjF9&limit=20
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 10. Admin Record Lifecycle History View
+# Retrieves chronological state mutation diffs and lifecycle events for an affected entity record.
+# Uses index ix_audit_logs_target_entity_created (target_table, target_id, created_at DESC).
+GET {{host}}/api/private/admin/audit-logs/records/users/USR-12345/history?limit=50
+Content-Type: application/json
+X-Header: {{secret_header_value}}
+
+
+###
+# 11. Admin Retrieve Audit Log Detail by UUID
 # Retrieves full detail of a specific activity audit log entry by UUID.
-# Replace :audit_log_id with an existing audit log UUID.
+# Replace with an existing audit log UUID.
 GET {{host}}/api/private/admin/audit-logs/00000000-0000-0000-0000-000000000000
 Content-Type: application/json
 X-Header: {{secret_header_value}}
