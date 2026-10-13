@@ -48,7 +48,7 @@ jobs:
     # secrets are unavailable on PRs from forks anyway.
     env:
       # App settings
-      APP_NAME: USSCI
+      APP_NAME: XCOM
       ENVIRONMENT: test
       DEBUG: "true"
       LOG_LEVEL: INFO

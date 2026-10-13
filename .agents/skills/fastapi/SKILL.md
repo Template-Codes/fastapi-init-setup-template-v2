@@ -1,6 +1,6 @@
 # FastAPI Asynchronous & Architecture Standards
 
-This document establishes the mandatory standards for route structuring, asynchronous I/O, lifespan management, HTTP status handling, and dependency injection across the USSCI ERP backend.
+This document establishes the mandatory standards for route structuring, asynchronous I/O, lifespan management, HTTP status handling, and dependency injection across the XCOM ERP backend.
 
 ---
 

@@ -112,57 +112,45 @@ class ActionName(str, Enum):
     # Standard CRUD & Administrative Lifecycle
     CREATE = "CREATE"          # Create draft or active records
     READ = "READ"              # Retrieve, inspect, or search records
-    UPDATE = "UPDATE"          # Modify unposted/draft records before final posting
-    DELETE = "DELETE"          # Purge draft/unposted records
+    UPDATE = "UPDATE"          # Modify records
+    DELETE = "DELETE"          # Purge or soft-delete records
     ACCEPT = "ACCEPT"          # Approve registration or workflow state
-    REJECT = "REJECT"          # Decline or reject registration or unposted draft
+    REJECT = "REJECT"          # Decline or reject registration or workflow state
+    APPROVE = "APPROVE"        # General administrative approval action
     ASSIGN = "ASSIGN"          # Assign role or permission links
     REVOKE = "REVOKE"          # Revoke assigned privileges or invalidate sessions
     GRANT = "GRANT"            # Grant specific privileges
+    EXPORT = "EXPORT"          # Export records or report data
 
-    # BIR CAS Statutory Actions (Annex B)
-    POST = "POST"              # Immutably finalize & post transaction into Books of Accounts (Annex B Item 10.b, 10.c)
-    VOID = "VOID"              # Void a posted transaction via reversing journal entries (Annex B Item 10.c)
-    VOIDED = "VOIDED"          # Statutory audit tag for voided transactions
-    REPRINT = "REPRINT"        # Produce duplicate invoice/receipt with mandatory 'REPRINT' watermark (Annex B Line 71)
-    TRANSMIT = "TRANSMIT"      # Auto-transmit e-invoice payload to BIR EIS API (RMC 98-2026)
-    GENERATE = "GENERATE"      # Generate official Books of Accounts / BIR tax certificates (Annex B Item 10.d, RR 9-2009)
-
-    # Authentication & Security Lifecycle (Annex B Items 207, 209, 211)
+    # Authentication & Security Lifecycle
     LOGIN = "LOGIN"                    # Successful user authentication
     FAILED_LOGIN = "FAILED_LOGIN"      # Unsuccessful authentication attempt
     LOGOUT = "LOGOUT"                  # Graceful session termination
-    LOCKOUT = "LOCKOUT"                # Account deactivation/ban due to excessive failed attempts (Annex B Line 209)
-    PASSWORD_CHANGE = "PASSWORD_CHANGE"# Password update or periodic expiration reset (Annex B Line 211)
-    FORCED_LOGOUT = "FORCED_LOGOUT"    # Administrative session termination (Annex B Line 207)
-    EXPORT = "EXPORT"                  # Export official Books of Accounts / audit data (Annex B Line 171)
+    LOCKOUT = "LOCKOUT"                # Account lockout following repeated failed sign-ons
+    PASSWORD_CHANGE = "PASSWORD_CHANGE"# Password update or reset
+    FORCED_LOGOUT = "FORCED_LOGOUT"    # Administrative session termination
     ACCESS_DENIED = "ACCESS_DENIED"    # Security event: Attempted access to unauthorized resource
 
 
-# Detailed descriptions for actions including BIR statutory references
+# Detailed descriptions for actions
 ACTION_DESCRIPTIONS: dict[ActionName, str] = {
-    ActionName.CREATE: "Create draft or unposted entity records",
+    ActionName.CREATE: "Create draft or active entity records",
     ActionName.READ: "Retrieve, view, or search records",
-    ActionName.UPDATE: "Modify unposted/draft records before final posting",
-    ActionName.DELETE: "Permanently delete draft/unposted records",
+    ActionName.UPDATE: "Modify existing records",
+    ActionName.DELETE: "Permanently delete or purge records",
     ActionName.ACCEPT: "Approve pending registration or workflow state",
     ActionName.REJECT: "Decline or reject pending registration or workflow",
+    ActionName.APPROVE: "Approve requested administrative action or workflow",
     ActionName.ASSIGN: "Assign role or permission links to an entity",
     ActionName.REVOKE: "Revoke assigned privileges or invalidate sessions",
     ActionName.GRANT: "Grant specific privilege to a role or user",
-    ActionName.POST: "BIR CAS: Immutably post transaction to the Books of Accounts (Annex B Item 10.b, 10.c)",
-    ActionName.VOID: "BIR CAS: Void posted transaction via reversing journal entries (Annex B Item 10.c)",
-    ActionName.VOIDED: "BIR CAS: Historical audit tag for voided transactions",
-    ActionName.REPRINT: "BIR CAS: Reprint receipt/invoice with mandatory REPRINT watermark (Annex B Line 71)",
-    ActionName.TRANSMIT: "BIR EIS: Transmit e-invoice JSON payload to BIR EIS API (RMC 98-2026)",
-    ActionName.GENERATE: "BIR CAS: Generate official books of accounts or tax certificates (RR 9-2009)",
-    ActionName.LOGIN: "Successful user sign-on and terminal session issuance",
+    ActionName.EXPORT: "Generate and download exported file or data report",
+    ActionName.LOGIN: "Successful user sign-on and session issuance",
     ActionName.FAILED_LOGIN: "Failed sign-on attempt with invalid credentials",
     ActionName.LOGOUT: "Explicit user sign-out and session invalidation",
-    ActionName.LOCKOUT: "BIR CAS: Account lockout following repeated failed sign-ons (Annex B Line 209)",
-    ActionName.PASSWORD_CHANGE: "BIR CAS: User credential modification or 30-day policy rotation (Annex B Line 211)",
-    ActionName.FORCED_LOGOUT: "BIR CAS: Invalidation of concurrent or administrative terminal sessions (Annex B Line 207)",
-    ActionName.EXPORT: "BIR CAS: Generate and download official audit or financial export file (Annex B Line 171)",
+    ActionName.LOCKOUT: "Account lockout following excessive failed sign-ons",
+    ActionName.PASSWORD_CHANGE: "User credential modification or password reset",
+    ActionName.FORCED_LOGOUT: "Administrative termination or revocation of active sessions",
     ActionName.ACCESS_DENIED: "Security event: Attempted access to an unauthorized endpoint or resource",
 }
 

@@ -8,7 +8,7 @@ from core.settings import Settings
 
 def test_settings_default_values():
     settings = Settings()
-    assert settings.APP_NAME == "USSCI"
+    assert settings.APP_NAME == "XCOM"
     assert settings.ENVIRONMENT in ["dev", "prod", "test"]
 
 def test_database_url_conversion():

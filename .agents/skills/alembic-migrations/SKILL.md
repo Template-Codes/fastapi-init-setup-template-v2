@@ -1,7 +1,7 @@
 ---
 # alembic-migration
 
-Standard operating procedure for creating, modifying, reviewing, and handling Alembic database migrations in the USSCI ERP codebase. Use whenever database schema changes, new tables, columns, indexes, or enums are created or altered.
+Standard operating procedure for creating, modifying, reviewing, and handling Alembic database migrations in the XCOM ERP codebase. Use whenever database schema changes, new tables, columns, indexes, or enums are created or altered.
 ---
 
 # Alembic Database Migration Guide

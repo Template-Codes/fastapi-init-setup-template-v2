@@ -8,7 +8,7 @@ X-Header: {{secret_header_value}}
 
 {
     "username": "user7",
-    "email": "user7@ussci.com",
+    "email": "user7@xcom.com",
     "plain_password": "Password@123"
 }
 

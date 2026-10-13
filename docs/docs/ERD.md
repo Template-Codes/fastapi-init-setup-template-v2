@@ -1,6 +1,6 @@
 # System-Wide Entity Relationship Diagram (ERD)
 
-This document provides the high-level database architecture for the USSCI Computerized Accounting System (CAS) and Enterprise Resource Planning (ERP). It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
+This document provides the high-level database architecture for the XCOM Computerized Accounting System (CAS) and Enterprise Resource Planning (ERP). It maps all PostgreSQL schemas, their constituent tables, and cross-module foreign key relationships.
 
 ---
 
@@ -259,10 +259,9 @@ erDiagram
 
 For table specifications, field-level data dictionaries, constraints, and index details, see:
 
-- [Authentication ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/authentication/ERD.md)
-- [Session Audit ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/session/ERD.md)
-- [User Profile ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/profile/ERD.md)
-- [RBAC & Dual-Authorization ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/rbac/ERD.md)
-- [BIR EIS Compliance ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/eis/ERD.md)
-- [Audit Trail ERD](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/audit_trail/ERD.md)
+- [Authentication ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/authentication/ERD.md)
+- [Session Audit ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/session/ERD.md)
+- [User Profile ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/profile/ERD.md)
+- [RBAC & Dual-Authorization ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/rbac/ERD.md)
+- [Audit Trail ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/audit_trail/ERD.md)
 

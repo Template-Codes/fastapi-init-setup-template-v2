@@ -1,6 +1,6 @@
 # Enterprise API Endpoints - Master Reference & BIR Compliance
 
-This document provides the system-wide catalog of all HTTP API endpoints in the USSCI Computerized Accounting System (CAS) and ERP. It details each endpoint's functional purpose and its mandatory statutory necessity under Bureau of Internal Revenue (BIR) regulations.
+This document provides the system-wide catalog of all HTTP API endpoints in the XCOM Computerized Accounting System (CAS) and ERP. It details each endpoint's functional purpose and its mandatory statutory necessity under Bureau of Internal Revenue (BIR) regulations.
 
 ---
 
@@ -34,11 +34,11 @@ All endpoints in this system enforce the following statutory mandates:
 
 | Module | Base Path / Prefix | Endpoints Summary | Detailed Module Docs |
 | :--- | :--- | :--- | :--- |
-| **Authentication** | `/api/public/auth/*`<br>`/api/private/admin/users/*` | Public registration, Argon2id token issuance, token rotation, and administrative user approval/rejection. | [Authentication Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/authentication/API_ENDPOINTS.md) |
-| **Session** | `/api/private/session/*`<br>`/api/private/admin/sessions/*` | Single-session logout, enterprise terminal monitoring, targeted session revocation, and emergency mass termination. | [Session Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/session/API_ENDPOINTS.md) |
-| **RBAC** | `/api/private/admin/rbac/*` | RBAC hierarchy queries, role assignments, zero-trust demotions, direct permission overrides, historical snapshot audits, rollbacks, and dual-control change requests. | [RBAC Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/rbac/API_ENDPOINTS.md) |
-| **BIR EIS** | `/api/internal/eis/*` | CAS invoice signing/encryption/transmission, submission inquiry, parent-linked retry chains, and 10-year paginated audit logs. | [BIR EIS Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/eis/API_ENDPOINTS.md) |
-| **User Profile** | `/api/private/profile/*` | Personal demographic information, contact numbers, structured tax addresses, and Philippine Data Privacy Act (DPA) isolation. | [Profile Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/profile/API_ENDPOINTS.md) |
+| **Authentication** | `/api/public/auth/*`<br>`/api/private/admin/users/*` | Public registration, Argon2id token issuance, token rotation, and administrative user approval/rejection. | [Authentication Endpoints](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/authentication/API_ENDPOINTS.md) |
+| **Session** | `/api/private/session/*`<br>`/api/private/admin/sessions/*` | Single-session logout, enterprise terminal monitoring, targeted session revocation, and emergency mass termination. | [Session Endpoints](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/session/API_ENDPOINTS.md) |
+| **RBAC** | `/api/private/admin/rbac/*` | RBAC hierarchy queries, role assignments, zero-trust demotions, direct permission overrides, historical snapshot audits, rollbacks, and dual-control change requests. | [RBAC Endpoints](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/rbac/API_ENDPOINTS.md) |
+| **BIR EIS** | `/api/internal/eis/*` | CAS invoice signing/encryption/transmission, submission inquiry, parent-linked retry chains, and 10-year paginated audit logs. | [BIR EIS Endpoints](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/eis/API_ENDPOINTS.md) |
+| **User Profile** | `/api/private/profile/*` | Personal demographic information, contact numbers, structured tax addresses, and Philippine Data Privacy Act (DPA) isolation. | [Profile Endpoints](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/profile/API_ENDPOINTS.md) |
 
 ---
 

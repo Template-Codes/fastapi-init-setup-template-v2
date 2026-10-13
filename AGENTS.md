@@ -1,6 +1,6 @@
-# USSCI ERP & CAS Agent Master Index
+# XCOM ERP & CAS Agent Master Index
 
-This document is the root entrypoint and navigation index for AI agents working in the USSCI ERP (Computerized Accounting System) repository. Follow the routing table below to dynamically load specialized domain knowledge on-demand to maintain high accuracy and prevent context saturation.
+This document is the root entrypoint and navigation index for AI agents working in the XCOM ERP (Computerized Accounting System) repository. Follow the routing table below to dynamically load specialized domain knowledge on-demand to maintain high accuracy and prevent context saturation.
 
 ---
 
