@@ -3,7 +3,7 @@ import pytest
 from fastapi import Request
 from core.settings import settings
 from exceptions.app_exception import TooManyRequestsException, UnauthorizedException
-from dependencies.rate_limit import rate_limit_by_ip
+from dependencies.rate_limit import rate_limit_by_ip, rate_limit_by_user
 
 
 @pytest.mark.asyncio
@@ -117,3 +117,59 @@ async def test_rate_limit_redis_failure_bypasses_gracefully():
     dep = rate_limit_by_ip(max_requests=5, window_sec=60)
     # Should not raise exception
     await dep(request=mock_request, redis=mock_redis)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_by_ip_without_secret_header_verification():
+    """Test that verify_secret_header=False allows requests without the secret header."""
+    mock_request = MagicMock(spec=Request)
+    mock_request.headers = {}
+    mock_request.client = MagicMock()
+    mock_request.client.host = "10.0.0.5"
+    mock_request.scope = {"route": MagicMock(path="/api/private/test")}
+
+    mock_redis = AsyncMock()
+    mock_redis.incr.return_value = 1
+
+    dep = rate_limit_by_ip(max_requests=10, window_sec=60, verify_secret_header=False)
+    await dep(request=mock_request, redis=mock_redis)
+
+    mock_redis.incr.assert_awaited_once_with("rate_limit:/api/private/test:10.0.0.5")
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_by_user_uses_user_id():
+    """Test that rate_limit_by_user scopes the Redis key by user_id in request.state."""
+    mock_request = MagicMock(spec=Request)
+    mock_request.state = MagicMock()
+    mock_request.state.user_id = "user-uuid-123"
+    mock_request.scope = {"route": MagicMock(path="/api/private/user-action")}
+
+    mock_redis = AsyncMock()
+    mock_redis.incr.return_value = 1
+
+    dep = rate_limit_by_user(max_requests=20, window_sec=60)
+    await dep(request=mock_request, redis=mock_redis)
+
+    mock_redis.incr.assert_awaited_once_with("rate_limit:/api/private/user-action:user:user-uuid-123")
+    mock_redis.expire.assert_awaited_once_with("rate_limit:/api/private/user-action:user:user-uuid-123", 60)
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_by_user_fallback_to_ip_when_no_user():
+    """Test that rate_limit_by_user falls back to IP address if user_id is not set."""
+    mock_request = MagicMock(spec=Request)
+    mock_request.state = MagicMock(spec=[])
+    mock_request.headers = {}
+    mock_request.client = MagicMock()
+    mock_request.client.host = "192.168.0.50"
+    mock_request.scope = {"route": MagicMock(path="/api/private/user-action")}
+
+    mock_redis = AsyncMock()
+    mock_redis.incr.return_value = 1
+
+    dep = rate_limit_by_user(max_requests=20, window_sec=60)
+    await dep(request=mock_request, redis=mock_redis)
+
+    mock_redis.incr.assert_awaited_once_with("rate_limit:/api/private/user-action:ip:192.168.0.50")
+

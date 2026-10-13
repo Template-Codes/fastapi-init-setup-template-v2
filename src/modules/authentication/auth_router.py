@@ -3,7 +3,7 @@ from uuid import UUID
 
 from core.settings import settings
 from dependencies.current_user import require_user_profile_and_get_id
-from dependencies.rate_limit import rate_limit_by_ip
+from dependencies.rate_limit import rate_limit_by_ip, rate_limit_by_user
 from dependencies.rbac_guard import require_role
 from fastapi import APIRouter, Depends, Request, Response, status
 from loguru import logger
@@ -34,7 +34,7 @@ router = APIRouter(
     summary="User registration. Pending flag on success.",
     status_code=status.HTTP_201_CREATED,
     response_model=UserRegistrationResponse,
-    dependencies=[Depends(rate_limit_by_ip())]
+    dependencies=[Depends(rate_limit_by_ip(max_requests=3, window_sec=180))]
 )
 async def user_registration(
     user: UserRegistrationRequest,
@@ -51,7 +51,7 @@ async def user_registration(
     summary="On success (HTTP 200 OK), grants access + refresh tokens.",
     status_code=status.HTTP_200_OK,
     response_model=UserAuthenticationResponse,
-    dependencies=[Depends(rate_limit_by_ip())]
+    dependencies=[Depends(rate_limit_by_ip(max_requests=5, window_sec=60))]
 )
 async def user_authentication(
     credential: UserAuthenticationRequest,
@@ -109,7 +109,7 @@ async def user_authentication(
     summary="Extract refresh token in cookies, verify signature using secret key and generate new access-token.",
     status_code=status.HTTP_200_OK,
     response_model=RefreshAuthenticationTokensResponse,
-    dependencies=[Depends(rate_limit_by_ip())]
+    dependencies=[Depends(rate_limit_by_ip(max_requests=20, window_sec=60))]
 )
 async def refresh_tokens(
     request: Request,
@@ -158,6 +158,7 @@ async def refresh_tokens(
     dependencies=[
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=30, window_sec=60)),
     ],
 )
 async def list_pending_user_registrations(
@@ -176,6 +177,7 @@ async def list_pending_user_registrations(
     dependencies=[
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=20, window_sec=60)),
     ],
 )
 async def approve_user_registration(
@@ -197,6 +199,7 @@ async def approve_user_registration(
     dependencies=[
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=20, window_sec=60)),
     ],
 )
 async def reject_user_registration(

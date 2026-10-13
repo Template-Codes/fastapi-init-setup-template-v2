@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from dependencies.current_user import require_user_profile_and_get_id
+from dependencies.rate_limit import rate_limit_by_user
 from dependencies.rbac_guard import require_role
 from modules.audit_trail.audit_trail_schema import (
     AuditLogQueryFilter,
@@ -27,6 +28,9 @@ router = APIRouter(
     summary="List paginated audit logs with dynamic filtering (Admin only).",
     status_code=status.HTTP_200_OK,
     response_model=PaginatedAuditLogResponse,
+    dependencies=[
+        Depends(rate_limit_by_user(max_requests=20, window_sec=60)),
+    ],
 )
 async def list_audit_logs(
     filter_params: AuditLogQueryFilter = Depends(),
@@ -41,6 +45,9 @@ async def list_audit_logs(
     summary="Retrieve details of a single audit log entry (Admin only).",
     status_code=status.HTTP_200_OK,
     response_model=AuditLogResponse,
+    dependencies=[
+        Depends(rate_limit_by_user(max_requests=60, window_sec=60)),
+    ],
 )
 async def get_audit_log_by_id(
     id: UUID,

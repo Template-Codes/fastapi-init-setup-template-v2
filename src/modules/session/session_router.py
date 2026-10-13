@@ -6,6 +6,7 @@ from loguru import logger
 
 from dependencies.credential_guard import require_sudo_credential
 from dependencies.current_user import require_user_profile_and_get_id
+from dependencies.rate_limit import rate_limit_by_user
 from dependencies.rbac_guard import require_role
 from modules.session.session_schema import (
     AdminUserSessionListItemResponse,
@@ -25,6 +26,9 @@ router = APIRouter(
     summary="Log out of the current active session and clear HTTP-Only cookies.",
     status_code=status.HTTP_200_OK,
     response_model=SessionLogoutResponse,
+    dependencies=[
+        Depends(rate_limit_by_user(max_requests=20, window_sec=60)),
+    ],
 )
 async def logout_current_session(
     request: Request,
@@ -52,6 +56,7 @@ async def logout_current_session(
     dependencies=[
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=30, window_sec=60)),
     ],
 )
 async def get_all_active_sessions(
@@ -70,6 +75,7 @@ async def get_all_active_sessions(
     dependencies=[
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=30, window_sec=60)),
     ],
 )
 async def admin_logout_session_by_id(
@@ -89,6 +95,7 @@ async def admin_logout_session_by_id(
         Depends(require_user_profile_and_get_id),
         Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
         Depends(require_sudo_credential),
+        Depends(rate_limit_by_user(max_requests=5, window_sec=300)),
     ],
 )
 async def admin_logout_all_sessions(

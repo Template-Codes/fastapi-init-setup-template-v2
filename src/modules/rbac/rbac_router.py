@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from dependencies.current_user import require_user_profile_and_get_id
+from dependencies.rate_limit import rate_limit_by_user
 from dependencies.rbac_guard import require_role
 from fastapi import APIRouter, Depends, Query, status
 from modules.rbac.rbac_schema import (
@@ -35,7 +36,10 @@ from shares.enums import RoleName
 router = APIRouter(
     prefix="/api/private/admin/rbac", 
     tags=["RBAC Administration"],
-    dependencies=[Depends(require_user_profile_and_get_id)],
+    dependencies=[
+        Depends(require_user_profile_and_get_id),
+        Depends(rate_limit_by_user(max_requests=60, window_sec=60)),
+    ],
 )
 
 
@@ -82,7 +86,10 @@ async def get_rbac_configuration(
     summary="List all users and their assigned roles and permissions (Admin only).",
     status_code=status.HTTP_200_OK,
     response_model=List[UserRBACListItemResponse],
-    dependencies=[Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN))],
+    dependencies=[
+        Depends(require_role(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+        Depends(rate_limit_by_user(max_requests=30, window_sec=60)),
+    ],
 )
 async def list_all_users_rbac_summary(
     role: Optional[str] = Query(None, description="Filter by role name or UUID"),
