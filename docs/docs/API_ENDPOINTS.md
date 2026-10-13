@@ -18,11 +18,11 @@ This document provides the system-wide catalog of all HTTP API endpoints in the 
 
 | Module | Base Path / Prefix | Endpoints Summary | Detailed Module Docs |
 | :--- | :--- | :--- | :--- |
-| **Authentication** | `/api/public/auth/*`<br>`/api/private/admin/users/*` | Public registration, Argon2id token issuance, token rotation, and administrative user approval/rejection. | [Authentication Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/authentication/API_ENDPOINTS.md) |
-| **Session** | `/api/private/session/*`<br>`/api/private/admin/sessions/*` | Session logout, enterprise terminal monitoring, targeted session revocation, and emergency mass termination. | [Session Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/session/API_ENDPOINTS.md) |
-| **RBAC** | `/api/private/admin/rbac/*` | RBAC hierarchy queries, role assignments, zero-trust demotions, direct permission overrides, historical snapshot audits, rollbacks, and dual-control change requests. | [RBAC Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/rbac/API_ENDPOINTS.md) |
-| **User Profile** | `/api/private/profile/*` | Personal demographic information, contact numbers, structured addresses, and privacy isolation. | [Profile Endpoints](file:///c:/Users/imper/Downloads/universal/erp/docs/docs/profile/API_ENDPOINTS.md) |
-| **Audit Trail** | `/api/private/admin/audit-logs/*` | Read-only administrative activity audit log inspection, multi-attribute filtering (module, resource, action, date range), and UUID detail lookup. | [Audit Trail API Specification](file:///c:/Users/imper/Downloads/universal/erp/docs/apis/audit_trail_api.http) |
+| **Authentication** | `/api/public/auth/*`<br>`/api/private/admin/users/*` | Public registration, Argon2id token issuance, token rotation, and administrative user approval/rejection. | [Authentication Endpoints](/xcom/erp/docs/docs/authentication/API_ENDPOINTS.md) |
+| **Session** | `/api/private/session/*`<br>`/api/private/admin/sessions/*` | Session logout, enterprise terminal monitoring, targeted session revocation, and emergency mass termination. | [Session Endpoints](/xcom/erp/docs/docs/session/API_ENDPOINTS.md) |
+| **RBAC** | `/api/private/admin/rbac/*` | RBAC hierarchy queries, role assignments, zero-trust demotions, direct permission overrides, historical snapshot audits, rollbacks, and dual-control change requests. | [RBAC Endpoints](/xcom/erp/docs/docs/rbac/API_ENDPOINTS.md) |
+| **User Profile** | `/api/private/profile/*` | Personal demographic information, contact numbers, structured addresses, and privacy isolation. | [Profile Endpoints](/xcom/erp/docs/docs/profile/API_ENDPOINTS.md) |
+| **Audit Trail** | `/api/private/admin/audit-logs/*` | Read-only administrative activity audit log inspection, multi-attribute filtering (module, resource, action, date range), and UUID detail lookup. | [Audit Trail API Specification](/xcom/erp/docs/apis/audit_trail_api.http) |
 
 ---
 

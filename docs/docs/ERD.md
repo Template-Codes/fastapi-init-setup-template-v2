@@ -259,9 +259,9 @@ erDiagram
 
 For table specifications, field-level data dictionaries, constraints, and index details, see:
 
-- [Authentication ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/authentication/ERD.md)
-- [Session Audit ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/session/ERD.md)
-- [User Profile ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/profile/ERD.md)
-- [RBAC & Dual-Authorization ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/rbac/ERD.md)
-- [Audit Trail ERD](file:///c:/Users/imper/Downloads/xcom/erp/docs/docs/audit_trail/ERD.md)
+- [Authentication ERD](/xcom/erp/docs/docs/authentication/ERD.md)
+- [Session Audit ERD](/xcom/erp/docs/docs/session/ERD.md)
+- [User Profile ERD](/xcom/erp/docs/docs/profile/ERD.md)
+- [RBAC & Dual-Authorization ERD](/xcom/erp/docs/docs/rbac/ERD.md)
+- [Audit Trail ERD](/xcom/erp/docs/docs/audit_trail/ERD.md)
 
