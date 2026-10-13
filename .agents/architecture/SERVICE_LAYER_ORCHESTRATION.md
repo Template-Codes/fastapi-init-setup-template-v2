@@ -66,13 +66,13 @@ class AccountingService:
 
 ### B. Business Invariants & Calculations
 All domain math and state validations belong in the service layer:
-- Calculating VATable vs. Exempt splits, withholding tax deductions, and currency conversions.
+- Calculating tax splits, volume discount deductions, and currency conversions.
 - Validating state transitions (e.g., `DRAFT` ➔ `POSTED`, checking that `POSTED` entries cannot be mutated).
 - Hashing passwords and evaluating cryptographic tokens.
 
 ### C. Cache & Side-Effect Coordination
 - Managing Redis session keys, rate limit quotas, and distributed locks.
-- Triggering secondary tasks (e.g., BIR EIS auto-transmission queues, audit log dispatch).
+- Triggering secondary tasks (e.g., asynchronous event notifications, audit log dispatch).
 
 ### D. DTO / Schema Transformations
 - Convert incoming Pydantic request models into domain dictionaries / model instances.

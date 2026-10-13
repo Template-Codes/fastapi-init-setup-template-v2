@@ -84,6 +84,6 @@ The platform separates machine-level database operations from human interaction 
 2. **User-Facing Identifier (`user_code: VARCHAR(20)`)**:
    - Monotonically increasing sequential code formatted with leading zero padding (`USR-00001`).
    - Powered by PostgreSQL sequence `auth.user_code_seq` (`server_default`).
-   - Aligns with **BIR CAS sequential numbering rules** (*Annex B Lines 17, 188*).
-   - Displayed exclusively on human-facing surfaces: admin session tables, user registration approvals, profile views, printed accounting audit reports, and user-facing search lookups.
+   - Provides clear, collision-free identification for operators and audit logs.
+   - Displayed exclusively on human-facing surfaces: admin session tables, user registration approvals, profile views, audit trail reports, and operator search lookups.
 

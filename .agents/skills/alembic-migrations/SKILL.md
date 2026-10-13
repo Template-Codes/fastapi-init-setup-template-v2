@@ -33,7 +33,7 @@ Alembic uses `target_metadata = Base.metadata`. If a model is not imported into 
 from modules.authentication import auth_model  # noqa: F401
 from modules.profile import user_profile_model  # noqa: F401
 from modules.session import session_model  # noqa: F401
-from modules.eis import eis_model  # noqa: F401
+from modules.audit_trail import audit_trail_model  # noqa: F401
 # Add your new module model here when adding a new domain!
 ```
 
@@ -59,7 +59,7 @@ uv run alembic revision --autogenerate -m "add_sales_invoice_tables_in_accountin
 After Alembic generates a file in `alembic/versions/<revision_id>_<message>.py`, **the agent MUST open and thoroughly inspect the generated file** against the following criteria:
 
 1. **Schema Qualification**:
-   - Verify all table and constraint operations properly include their schema parameter (e.g., `schema='auth'`, `schema='eis'`, `schema='accounting'`).
+   - Verify all table and constraint operations properly include their schema parameter (e.g., `schema='auth'`, `schema='session'`, `schema='audit_trail'`).
    - Check that foreign keys point to the correct schema-qualified tables (e.g., `fk_table_column_referenced_table`).
 
 2. **PostgreSQL Enums**:

@@ -78,14 +78,14 @@ flowchart TD
 
 ---
 
-## Admin User Registration Approval Lifecycle (BIR CAS Annex B Item 11.a)
+## Admin User Registration Approval Lifecycle
 
 ```mermaid
 flowchart TD
-    A[Public Registration: POST /api/public/auth/registration] --> B[Save User in DB with status = PENDING]
+    A[Public Registration: POST /api/public/auth/register] --> B[Save User in DB with status = PENDING]
     B --> C[User Attempting Login is Blocked with 403 Forbidden: Account Inactive]
     
-    D[Admin Lists Pending: GET /api/private/admin/users/pending] --> E[Guarded by require_permission AUTHENTICATION_USER_READ]
+    D[Admin Lists Pending: GET /api/private/admin/users/pending-registrations] --> E[Guarded by require_permission AUTHENTICATION_USER_READ]
     E --> F[Returns List of Pending Users with registration timestamp]
     
     G[Admin Approves: POST /api/private/admin/users/{user_id}/approve] --> H[Guarded by require_permission AUTHENTICATION_REGISTRATION_ACCEPT]
@@ -99,5 +99,5 @@ flowchart TD
     O --> P{User exists & status == PENDING?}
     P -->|No| Q[Raise 404 or 400 Exception]
     P -->|Yes| R[Set status = INACTIVE in DB]
-    R --> S[Commit Transaction & Return 200 OK<br/>Record Retained for 10-Yr BIR Audit Trail]
+    R --> S[Commit Transaction & Return 200 OK<br/>Record Retained for System Audit Trail]
 ```

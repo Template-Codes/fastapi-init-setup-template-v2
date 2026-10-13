@@ -21,11 +21,6 @@ class UserResponse(BaseSchema):
     first_name: str
     # Serializes to {"userId": "...", "firstName": "..."} while accepting snake_case
 ```
-- **BIR EIS Integration Base (`src/modules/eis/eis_schema.py`)**: Inherit from `EisBirBaseModel` for BIR submissions. Enforces PascalCase and `extra="forbid"`:
-```python
-class EisBirBaseModel(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="forbid", from_attributes=True)
-```
 
 ---
 
@@ -41,7 +36,7 @@ from pydantic import BaseModel, Field
 class LineItemSchema(BaseModel):
     unit_cost: Decimal = Field(..., ge=0, decimal_places=4)
     sales_amount: Decimal = Field(..., ge=0, decimal_places=2)
-    vat_amount: Decimal = Field(..., ge=0, decimal_places=2)
+    tax_amount: Decimal = Field(..., ge=0, decimal_places=2)
 ```
 
 ---
@@ -49,7 +44,7 @@ class LineItemSchema(BaseModel):
 ## 3. Field Aliasing & Case Transformations
 
 - **ReactJS Clients**: Rely on `alias_generator=to_camel` and `populate_by_name=True` via `BaseSchema`.
-- **BIR EIS Payloads**: Use explicit PascalCase field names (`Tin`, `BranchCd`, `VATAmt`, `ItemList`) with exact length constraints matching the BIR JSON schema.
+- **External Integrations**: When external APIs require specific casing (e.g. PascalCase or kebab-case), use `alias_generator` or explicit `Field(alias="...")`.
 - **Custom Aliases**: Use `Field(alias="customName", validation_alias="...")` when mapping non-standard legacy or third-party properties.
 
 ---
@@ -59,23 +54,25 @@ class LineItemSchema(BaseModel):
 Always use Pydantic v2 classmethod validators:
 
 ```python
-from pydantic import field_validator, model_validator
+from decimal import Decimal
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 class InvoiceRequest(BaseModel):
-    branch_code: str
-    vatable_sales: Decimal
-    vat_amount: Decimal
+    reference_code: str
+    subtotal: Decimal = Field(..., ge=0)
+    tax_rate: Decimal = Field(..., ge=0, le=1)
+    tax_amount: Decimal = Field(..., ge=0)
 
-    @field_validator("branch_code", mode="before")
+    @field_validator("reference_code", mode="before")
     @classmethod
-    def pad_branch_code(cls, v: str) -> str:
-        return str(v).strip().zfill(5)[:5] if v else "00000"
+    def sanitize_reference_code(cls, v: str) -> str:
+        return str(v).strip().upper() if v else ""
 
     @model_validator(mode="after")
-    def validate_vat_math(self) -> "InvoiceRequest":
-        expected_vat = (self.vatable_sales * Decimal("0.12")).quantize(Decimal("0.01"))
-        if abs(self.vat_amount - expected_vat) > Decimal("0.05"):
-            raise ValueError(f"VAT amount ({self.vat_amount}) does not match 12% calculation ({expected_vat}).")
+    def validate_tax_math(self) -> "InvoiceRequest":
+        expected_tax = (self.subtotal * self.tax_rate).quantize(Decimal("0.01"))
+        if abs(self.tax_amount - expected_tax) > Decimal("0.05"):
+            raise ValueError(f"Tax amount ({self.tax_amount}) does not match calculation ({expected_tax}).")
         return self
 ```
 

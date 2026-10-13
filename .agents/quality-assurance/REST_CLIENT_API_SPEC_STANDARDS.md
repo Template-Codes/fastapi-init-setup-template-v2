@@ -7,7 +7,7 @@ Whenever creating, modifying, or refactoring API endpoints in `src/modules/`, yo
 ## 1. Directory & File Naming Conventions
 
 - **Location**: All `.http` files reside in `docs/apis/`.
-- **Mirror Naming**: Every router module (`src/modules/<domain>/<domain>_router.py`) must have a corresponding `docs/apis/<domain>_api.http` file (e.g., `auth_api.http`, `eis_api.http`, `accounting_api.http`).
+- **Mirror Naming**: Every router module (`src/modules/<domain>/<domain>_router.py`) must have a corresponding `docs/apis/<domain>_api.http` file (e.g., `auth_api.http`, `audit_trail_api.http`, `accounting_api.http`).
 - **Global / Middleware APIs**: Shared or middleware endpoints belong in `docs/apis/middlewares.http` or `docs/apis/system.http`.
 
 ---
@@ -40,9 +40,9 @@ For every endpoint in the router, the corresponding `.http` block must provide:
 ```http
 ###
 # 1. Create Sales Invoice (Private - Accounting Role)
-# Creates a new invoice and triggers draft BIR EIS staging. Returns HTTP 201 Created.
+# Creates a new sales invoice. Returns HTTP 201 Created.
 # @name createInvoice
-POST {{host}}/api/v1/invoices
+POST {{host}}/api/private/accounting/invoices
 Content-Type: application/json
 X-Header: {{secret_header_value}}
 Authorization: Bearer {{login.response.body.authTokenPayload.accessToken}}

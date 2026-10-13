@@ -36,7 +36,7 @@ tests/
 
 Global fixtures in `tests/conftest.py` ensure 100% test isolation:
 
-- **`prepare_test_database` (session autouse)**: Creates required PostgreSQL schemas (`auth`, `profile`, `session`, `eis`, `accounting`) and runs `Base.metadata.create_all`.
+- **`prepare_test_database` (session autouse)**: Creates required PostgreSQL schemas (e.g., `auth`, `profile`, `session`, `accounting`) and runs `Base.metadata.create_all`.
 - **`db_session` (function scope)**: Opens a connection on `TEST_DATABASE_URL`, begins a transaction, and **always rolls back on teardown**:
 ```python
 @pytest_asyncio.fixture
@@ -80,7 +80,7 @@ async def test_service_method():
 ## 5. Mandatory Edge Case & Negative Testing
 
 Every test suite must comprehensively cover failure modes and edge cases:
-1. **Validation & Boundaries**: Empty strings, max string lengths, malformed UUIDs/TINs, negative monetary amounts, zero-divisions.
+1. **Validation & Boundaries**: Empty strings, max string lengths, malformed UUIDs, negative monetary amounts, zero-divisions.
 2. **Security & Auth**: Expired JWT tokens, missing Bearer headers, invalid signatures, locked-out accounts.
 3. **Database Collisions**: Duplicate email/username `ConflictException`, missing foreign keys, integrity errors.
-4. **Regulatory/BIR Invariants**: Mixed-tax VAT math mismatches, missing 5-digit branch code padding, attempts to mutate `POSTED` invoices.
+4. **Business Domain Invariants**: Precision math calculations, immutable finalized state validations, foreign key cascade boundaries.

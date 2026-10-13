@@ -1,6 +1,6 @@
-# XCOM ERP & CAS Agent Master Index
+# XCOM ERP Agent Master Index
 
-This document is the root entrypoint and navigation index for AI agents working in the XCOM ERP (Computerized Accounting System) repository. Follow the routing table below to dynamically load specialized domain knowledge on-demand to maintain high accuracy and prevent context saturation.
+This document is the root entrypoint and navigation index for AI agents working in the XCOM ERP repository. Follow the routing table below to dynamically load specialized domain knowledge on-demand to maintain high accuracy and prevent context saturation.
 
 ---
 
@@ -19,7 +19,6 @@ Before writing, analyzing, or refactoring code in any specific domain, **read th
 | Task Domain | Document to Load & Read | Key Technical Focus |
 | :--- | :--- | :--- |
 | **Agent Persona & Skepticism** | `.agents/persona/ASSISTANT_BEHAVIOR_PATTERN.md` | Researcher, Doubter, and Notifier mindset |
-| **BIR / CAS Compliance** | `.agents/bir-compliance/CAS_FUNCTIONAL_RULES.md` | Immutability, sequential series, audit trails, EIS |
 | **Service Layer Architecture** | `.agents/architecture/SERVICE_LAYER_ORCHESTRATION.md` | 3-tier boundary, cross-repo orchestration, thin routers |
 | **Router Layer Architecture** | `.agents/architecture/ROUTER_LAYER_ORCHISTRATION.md` | Endpoint naming, /api/public vs /api/private, dependencies |
 | **SQLAlchemy 2.0 & ORM Models** | `.agents/skills/sqlalchemy/SKILL.md` | `Mapped[...]`, `BaseRepository`, UUIDv7, async queries |
@@ -38,7 +37,6 @@ Before writing, analyzing, or refactoring code in any specific domain, **read th
 All prompt documents are organized by purpose under `.agents/`:
 - **`rules/`**: Universal baseline constraints (Always-On).
 - **`persona/`**: Behavioral traits and critical risk escalation patterns.
-- **`bir-compliance/`**: Philippine BIR statutory CAS & EIS regulations.
 - **`architecture/`**: High-level layer boundaries and system orchestration.
 - **`skills/`**: Technical runbooks, code snippets, and framework patterns.
 - **`quality-assurance/`**: Pytest testing suites and REST client specifications.
